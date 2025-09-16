@@ -1,0 +1,26 @@
+{
+  "name": "jpg2pdf",
+  "version": "1.0.0",
+  "description": "Convert JPG images in a folder to a single PDF file",
+  "main": "src/index.js",
+  "type": "module",
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "node --watch src/index.js"
+  },
+  "keywords": [
+    "jpg",
+    "pdf",
+    "convert",
+    "image",
+    "nodejs"
+  ],
+  "author": "Serhii",
+  "license": "MIT",
+  "dependencies": {
+    "pdf-lib": "^1.17.1"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
