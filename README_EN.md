@@ -1,10 +1,12 @@
 # JPG to PDF Converter
 
-Simple and fast Node.js script for converting JPG images to a single PDF file.
+Simple and fast Node.js application for converting JPG images to PDF with web interface.
 
 ## 📋 Description
 
-This script scans the `input` folder for JPG files and creates a single PDF file from all found images. Pages in the PDF are added in alphabetical order by file names.
+This application provides two ways to work:
+1. **Web Interface** - convenient drag-n-drop interface with ability to reorder pages
+2. **CLI Script** - scans the `input` folder for JPG files and creates a single PDF file
 
 ## 🚀 Quick Start
 
@@ -12,9 +14,25 @@ This script scans the `input` folder for JPG files and creates a single PDF file
 
 ```bash
 npm install
+cd frontend && npm install && cd ..
 ```
 
-### Usage
+### Option 1: Web Interface (Recommended)
+
+1. **Start the application**:
+   ```bash
+   npm run dev
+   ```
+
+2. **Open browser** at `http://localhost:5173`
+
+3. **Upload JPG files** via drag-n-drop or upload button
+
+4. **Reorder images** by dragging them around
+
+5. **Click "Generate PDF"** and save the result
+
+### Option 2: CLI Script
 
 1. **Place JPG files** in the `input/` folder:
    ```
@@ -27,7 +45,7 @@ npm install
 
 2. **Run the script**:
    ```bash
-   npm start
+   npm run cli
    ```
 
 3. **Find the generated PDF** in `output/output.pdf`
@@ -51,6 +69,15 @@ jpg2pdf/
 
 ## 📝 Features
 
+### Web Interface
+- **Drag-n-Drop Upload**: Drag files directly into browser
+- **Interactive Sorting**: Reorder pages by dragging
+- **Image Preview**: See all uploaded files
+- **Progress Bar**: Track PDF generation progress
+- **Instant Download**: Save generated PDF with one click
+- **Responsive Design**: Works on all devices
+
+### CLI Mode
 - **Automatic sorting**: Pages are added in alphabetical order by file names
 - **Quality preservation**: Images are inserted into PDF without quality loss
 - **Auto-scaling**: PDF page size automatically adjusts to image size
