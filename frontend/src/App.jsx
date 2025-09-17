@@ -1,6 +1,6 @@
 import { useState, useCallback, useRef, useEffect } from 'react'
 import { ReactSortable } from 'react-sortablejs'
-import { Upload, FileImage, Download, Trash2, Move, FileText } from 'lucide-react'
+import { Upload, FileImage, Download, Trash2, Move, FileText, Expand, X } from 'lucide-react'
 
 function App() {
   const [images, setImages] = useState([])
@@ -149,19 +149,12 @@ function App() {
     }
   }
 
-  const handleImageMouseDown = useCallback((image) => {
+  const handleEnlargeImage = useCallback((image) => {
     setEnlargedImage(image)
   }, [])
 
-  const handleImageMouseUp = useCallback(() => {
+  const handleCloseModal = useCallback(() => {
     setEnlargedImage(null)
-  }, [])
-
-  const handleModalClick = useCallback((e) => {
-    // Close modal when clicking on overlay (not on image itself)
-    if (e.target === e.currentTarget) {
-      setEnlargedImage(null)
-    }
   }, [])
 
   // Handle Escape key to close modal
@@ -172,8 +165,13 @@ function App() {
       }
     }
 
-    document.addEventListener('keydown', handleKeyDown)
-    return () => document.removeEventListener('keydown', handleKeyDown)
+    if (enlargedImage) {
+      document.addEventListener('keydown', handleKeyDown)
+    }
+
+    return () => {
+      document.removeEventListener('keydown', handleKeyDown)
+    }
   }, [enlargedImage])
 
   return (
@@ -246,21 +244,23 @@ function App() {
                     <img 
                       src={image.preview} 
                       alt={image.name}
-                      className="w-full h-full object-cover cursor-pointer"
-                      onMouseDown={(e) => {
-                        e.preventDefault()
-                        handleImageMouseDown(image)
-                      }}
-                      onMouseUp={handleImageMouseUp}
-                      onMouseLeave={handleImageMouseUp}
+                      className="w-full h-full object-cover"
                     />
                   </div>
                   <div className="absolute top-2 left-2 bg-blue-500 text-white rounded-full w-6 h-6 flex items-center justify-center text-sm font-medium">
                     {index + 1}
                   </div>
                   <button
+                    onClick={() => handleEnlargeImage(image)}
+                    className="absolute top-2 right-8 bg-green-500 text-white rounded-full p-1 opacity-0 group-hover:opacity-100 transition-opacity hover:bg-green-600"
+                    title="Enlarge image"
+                  >
+                    <Expand className="h-3 w-3" />
+                  </button>
+                  <button
                     onClick={() => removeImage(image.id)}
                     className="absolute top-2 right-2 bg-red-500 text-white rounded-full p-1 opacity-0 group-hover:opacity-100 transition-opacity"
+                    title="Remove image"
                   >
                     <Trash2 className="h-3 w-3" />
                   </button>
@@ -351,17 +351,37 @@ function App() {
       {/* Image Enlargement Modal */}
       {enlargedImage && (
         <div 
-          className="fixed inset-0 bg-black bg-opacity-90 z-50 flex items-center justify-center cursor-pointer"
-          onMouseUp={handleImageMouseUp}
-          onClick={handleModalClick}
+          className="fixed inset-0 bg-black bg-opacity-90 z-50 flex items-center justify-center"
+          onClick={(e) => {
+            // Close modal when clicking on overlay (not on image)
+            if (e.target === e.currentTarget) {
+              handleCloseModal()
+            }
+          }}
         >
+          {/* Close button */}
+          <button
+            onClick={handleCloseModal}
+            className="absolute top-4 right-4 bg-white bg-opacity-20 hover:bg-opacity-30 text-white rounded-full p-2 transition-all z-60"
+            title="Close (Esc)"
+          >
+            <X className="h-6 w-6" />
+          </button>
+
+          {/* Enlarged image */}
           <img 
             src={enlargedImage.preview}
             alt={enlargedImage.name}
             className="max-h-full max-w-full object-contain select-none"
-            onMouseUp={handleImageMouseUp}
             draggable={false}
           />
+
+          {/* Image info */}
+          <div className="absolute bottom-4 left-4 right-4 text-center">
+            <p className="text-white text-sm bg-black bg-opacity-50 rounded px-3 py-2 inline-block">
+              {enlargedImage.name}
+            </p>
+          </div>
         </div>
       )}
     </div>
