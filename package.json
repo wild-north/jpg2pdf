@@ -9,7 +9,9 @@
     "dev:backend": "nodemon backend/server.js",
     "dev:frontend": "cd frontend && npm run dev",
     "build": "cd frontend && npm run build",
-    "start": "node backend/server.js",
+    "start": "npm run build && node backend/server.js",
+    "start:dev": "concurrently \"npm run dev:backend\" \"npm run dev:frontend\"",
+    "start:prod": "node backend/server.js",
     "cli": "node backend/pdf-generator.js"
   },
   "keywords": [
