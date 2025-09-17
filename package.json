@@ -1,24 +1,41 @@
 {
   "name": "jpg2pdf",
   "version": "1.0.0",
-  "description": "Convert JPG images in a folder to a single PDF file",
-  "main": "src/index.js",
+  "description": "Convert JPG images to PDF with web interface",
+  "main": "backend/server.js",
   "type": "module",
   "scripts": {
-    "start": "node src/index.js",
-    "dev": "node --watch src/index.js"
+    "dev": "concurrently \"npm run dev:backend\" \"npm run dev:frontend\"",
+    "dev:backend": "nodemon backend/server.js",
+    "dev:frontend": "cd frontend && npm run dev",
+    "build": "cd frontend && npm run build",
+    "start": "concurrently \"npm run start:backend\" \"npm run start:frontend\"",
+    "start:backend": "node backend/server.js",
+    "start:frontend": "cd frontend && npm run dev",
+    "start:prod": "npm run build && node backend/server.js",
+    "cli": "node backend/pdf-generator.js"
   },
   "keywords": [
     "jpg",
     "pdf",
     "convert",
     "image",
-    "nodejs"
+    "nodejs",
+    "react",
+    "web"
   ],
   "author": "Serhii",
   "license": "MIT",
   "dependencies": {
-    "pdf-lib": "^1.17.1"
+    "cors": "^2.8.5",
+    "express": "^4.21.2",
+    "multer": "^1.4.5-lts.1",
+    "pdf-lib": "^1.17.1",
+    "sharp": "^0.34.3"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2",
+    "nodemon": "^3.1.10"
   },
   "engines": {
     "node": ">=18.0.0"
