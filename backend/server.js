@@ -5,6 +5,7 @@ import { PDFDocument } from 'pdf-lib';
 import { readdir, readFile } from 'fs/promises';
 import { join, extname } from 'path';
 import fs from 'fs';
+import sharp from 'sharp';
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -29,14 +30,76 @@ const upload = multer({
   }
 });
 
-async function createPdfFromBuffers(files) {
+async function compressImages(files, quality = 80) {
+  console.log(`Compressing ${files.length} images with quality ${quality}`);
+  
+  const compressedFiles = [];
+  
+  for (const file of files) {
+    try {
+      const compressedBuffer = await sharp(file.buffer)
+        .jpeg({ quality, mozjpeg: true })
+        .toBuffer();
+      
+      compressedFiles.push({
+        ...file,
+        buffer: compressedBuffer
+      });
+      
+      console.log(`Compressed ${file.originalname}: ${file.buffer.length} -> ${compressedBuffer.length} bytes (${Math.round((1 - compressedBuffer.length / file.buffer.length) * 100)}% reduction)`);
+    } catch (error) {
+      console.error(`Error compressing ${file.originalname}: ${error.message}`);
+      // If compression fails, use original
+      compressedFiles.push(file);
+    }
+  }
+  
+  return compressedFiles;
+}
+
+async function createPdfFromBuffers(files, maxSizeBytes = null) {
   if (!files || files.length === 0) {
     throw new Error('No files provided');
   }
 
   console.log(`Creating PDF from ${files.length} images`);
   console.log(`File order received:`, files.map((f, i) => `${i + 1}. ${f.originalname}`));
+  if (maxSizeBytes) {
+    console.log(`Size limit: ${(maxSizeBytes / (1024 * 1024)).toFixed(2)} MB`);
+  }
   
+  // First attempt with original images
+  let currentFiles = files;
+  let pdfBytes = await generatePdfFromFiles(currentFiles);
+  
+  // If size limit is set and exceeded, try compression
+  if (maxSizeBytes && pdfBytes.length > maxSizeBytes) {
+    console.log(`PDF size (${(pdfBytes.length / (1024 * 1024)).toFixed(2)} MB) exceeds limit, applying compression...`);
+    
+    // Try different quality levels: 70, 60, 50, 40, 30
+    const qualityLevels = [70, 60, 50, 40, 30];
+    
+    for (const quality of qualityLevels) {
+      const compressedFiles = await compressImages(files, quality);
+      const compressedPdfBytes = await generatePdfFromFiles(compressedFiles);
+      
+      console.log(`Quality ${quality}: PDF size ${(compressedPdfBytes.length / (1024 * 1024)).toFixed(2)} MB`);
+      
+      if (compressedPdfBytes.length <= maxSizeBytes) {
+        console.log(`✅ Size target achieved with quality ${quality}`);
+        return compressedPdfBytes;
+      }
+      
+      pdfBytes = compressedPdfBytes; // Keep the last attempt
+    }
+    
+    console.log(`⚠️ Could not achieve size limit, using lowest quality result`);
+  }
+
+  return pdfBytes;
+}
+
+async function generatePdfFromFiles(files) {
   const pdfDoc = await PDFDocument.create();
 
   for (let i = 0; i < files.length; i++) {
@@ -73,7 +136,16 @@ app.post('/api/generate-pdf', upload.array('images'), async (req, res) => {
 
     console.log(`Received ${req.files.length} files for PDF generation`);
     
-    const pdfBytes = await createPdfFromBuffers(req.files);
+    // Get file size limit from form data
+    let maxSizeBytes = null;
+    if (req.body.maxSizeMB) {
+      maxSizeBytes = parseFloat(req.body.maxSizeMB) * 1024 * 1024;
+      console.log(`File size limit: ${req.body.maxSizeMB} MB`);
+    }
+    
+    const pdfBytes = await createPdfFromBuffers(req.files, maxSizeBytes);
+    
+    console.log(`Final PDF size: ${(pdfBytes.length / (1024 * 1024)).toFixed(2)} MB`);
     
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', 'attachment; filename="generated.pdf"');

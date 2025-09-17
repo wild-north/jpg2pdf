@@ -8,6 +8,9 @@ function App() {
   const [progress, setProgress] = useState(0)
   const [generatedPdfUrl, setGeneratedPdfUrl] = useState(null)
   const [autoDownload, setAutoDownload] = useState(false)
+  const [limitFileSize, setLimitFileSize] = useState(false)
+  const [maxFileSizeMB, setMaxFileSizeMB] = useState(1)
+  const [generatedFileSize, setGeneratedFileSize] = useState(null)
   const [enlargedImageIndex, setEnlargedImageIndex] = useState(null)
   const fileInputRef = useRef(null)
 
@@ -34,6 +37,14 @@ function App() {
     }
     
     setImages(prev => [...prev, ...newImages])
+  }, [])
+
+  // Format file size for display
+  const formatFileSize = useCallback((bytes) => {
+    if (bytes === 0) return '0 B'
+    if (bytes < 1024) return bytes + ' B'
+    if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB'
+    return (bytes / (1024 * 1024)).toFixed(2) + ' MB'
   }, [])
 
   // Generate base filename from image names
@@ -86,6 +97,7 @@ function App() {
     setIsGenerating(true)
     setProgress(0)
     setGeneratedPdfUrl(null)
+    setGeneratedFileSize(null)
 
     try {
       const formData = new FormData()
@@ -93,6 +105,11 @@ function App() {
       images.forEach((image) => {
         formData.append('images', image.file)
       })
+
+      // Add file size limit if enabled
+      if (limitFileSize) {
+        formData.append('maxSizeMB', maxFileSizeMB.toString())
+      }
 
       const progressInterval = setInterval(() => {
         setProgress(prev => {
@@ -117,6 +134,7 @@ function App() {
       const blob = await response.blob()
       const url = URL.createObjectURL(blob)
       setGeneratedPdfUrl(url)
+      setGeneratedFileSize(blob.size)
 
       // Auto download if checkbox is checked
       if (autoDownload) {
@@ -306,8 +324,8 @@ function App() {
         {images.length > 0 && (
           <div className="bg-white rounded-lg shadow-lg p-6">
             <div className="text-center">
-              {/* Auto Download Checkbox */}
-              <div className="mb-6">
+              {/* Options */}
+              <div className="mb-6 space-y-4">
                 <label className="flex items-center justify-center text-sm text-gray-600">
                   <input
                     type="checkbox"
@@ -317,6 +335,41 @@ function App() {
                   />
                   Download Automatically
                 </label>
+
+                <div className="border-t pt-4">
+                  <label className="flex items-center justify-center text-sm text-gray-600 mb-3">
+                    <input
+                      type="checkbox"
+                      checked={limitFileSize}
+                      onChange={(e) => setLimitFileSize(e.target.checked)}
+                      className="mr-2 h-4 w-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                    />
+                    Limit File Size
+                  </label>
+
+                  {limitFileSize && (
+                    <div className="px-8">
+                      <div className="flex items-center justify-center space-x-4 mb-3">
+                        <label className="text-sm text-gray-600 min-w-max">Max size:</label>
+                        <input
+                          type="range"
+                          min="0.5"
+                          max="10"
+                          step="0.5"
+                          value={maxFileSizeMB}
+                          onChange={(e) => setMaxFileSizeMB(parseFloat(e.target.value))}
+                          className="flex-1 max-w-40"
+                        />
+                        <span className="text-sm font-medium text-gray-700 min-w-max">
+                          {maxFileSizeMB} MB
+                        </span>
+                      </div>
+                      <p className="text-xs text-gray-500 text-center">
+                        Images will be compressed if PDF exceeds this size
+                      </p>
+                    </div>
+                  )}
+                </div>
               </div>
 
               {!isGenerating && (
@@ -344,9 +397,19 @@ function App() {
 
               {generatedPdfUrl && !autoDownload && (
                 <div className="text-center">
-                  <p className="text-green-600 font-medium mb-4">
+                  <p className="text-green-600 font-medium mb-2">
                     ✅ PDF generated successfully!
                   </p>
+                  {generatedFileSize && (
+                    <p className="text-gray-600 text-sm mb-4">
+                      File size: {formatFileSize(generatedFileSize)}
+                      {limitFileSize && generatedFileSize > maxFileSizeMB * 1024 * 1024 && (
+                        <span className="text-orange-600 ml-2">
+                          (size limit exceeded, compression applied)
+                        </span>
+                      )}
+                    </p>
+                  )}
                   <button
                     onClick={downloadPdf}
                     className="bg-blue-500 hover:bg-blue-600 text-white px-8 py-4 rounded-lg font-medium text-lg transition-colors flex items-center mx-auto"
@@ -359,9 +422,19 @@ function App() {
 
               {generatedPdfUrl && autoDownload && (
                 <div className="text-center">
-                  <p className="text-green-600 font-medium mb-4">
+                  <p className="text-green-600 font-medium mb-2">
                     ✅ PDF generated and downloaded automatically!
                   </p>
+                  {generatedFileSize && (
+                    <p className="text-gray-600 text-sm mb-4">
+                      File size: {formatFileSize(generatedFileSize)}
+                      {limitFileSize && generatedFileSize > maxFileSizeMB * 1024 * 1024 && (
+                        <span className="text-orange-600 ml-2">
+                          (size limit exceeded, compression applied)
+                        </span>
+                      )}
+                    </p>
+                  )}
                 </div>
               )}
             </div>
