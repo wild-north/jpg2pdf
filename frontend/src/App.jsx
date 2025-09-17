@@ -299,10 +299,10 @@ function App() {
                   </div>
                   <button
                     onClick={() => handleEnlargeImage(image)}
-                    className="absolute top-2 right-8 bg-green-500 text-white rounded-full p-1 opacity-0 group-hover:opacity-100 transition-opacity hover:bg-green-600"
+                    className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 bg-green-500 bg-opacity-90 hover:bg-opacity-100 text-white rounded-full p-3 opacity-0 group-hover:opacity-100 transition-all hover:bg-green-600 hover:scale-110"
                     title="Enlarge image"
                   >
-                    <Expand className="h-3 w-3" />
+                    <Expand className="h-6 w-6" />
                   </button>
                   <button
                     onClick={() => removeImage(image.id)}
@@ -350,7 +350,7 @@ function App() {
                   {limitFileSize && (
                     <div className="px-8">
                       <div className="flex items-center justify-center space-x-4 mb-3">
-                        <label className="text-sm text-gray-600 min-w-max">Max size:</label>
+                        <label className="text-sm text-gray-600 min-w-max">Size:</label>
                         <input
                           type="range"
                           min="0.5"
