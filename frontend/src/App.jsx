@@ -476,10 +476,10 @@ function App() {
           {/* Close button */}
           <button
             onClick={handleCloseModal}
-            className="absolute top-4 right-4 bg-white bg-opacity-20 hover:bg-opacity-30 text-white rounded-full p-2 transition-all z-60"
+            className="absolute top-4 right-4 bg-black bg-opacity-60 hover:bg-opacity-80 text-white rounded-full p-2 transition-all z-60 shadow-lg border border-gray-600"
             title="Close (Esc)"
           >
-            <X className="h-6 w-6" />
+            <X className="h-6 w-6 stroke-white stroke-2" />
           </button>
 
           {/* Navigation arrows */}
@@ -487,18 +487,18 @@ function App() {
             <>
               <button
                 onClick={handlePrevImage}
-                className="absolute left-4 top-1/2 transform -translate-y-1/2 bg-white bg-opacity-20 hover:bg-opacity-30 text-white rounded-full p-3 transition-all"
+                className="absolute left-4 top-1/2 transform -translate-y-1/2 bg-black bg-opacity-60 hover:bg-opacity-80 text-white rounded-full p-3 transition-all shadow-lg border border-gray-600"
                 title="Previous image (←)"
               >
-                <ChevronLeft className="h-6 w-6" />
+                <ChevronLeft className="h-8 w-8 stroke-white stroke-2" />
               </button>
               
               <button
                 onClick={handleNextImage}
-                className="absolute right-4 top-1/2 transform -translate-y-1/2 bg-white bg-opacity-20 hover:bg-opacity-30 text-white rounded-full p-3 transition-all"
+                className="absolute right-4 top-1/2 transform -translate-y-1/2 bg-black bg-opacity-60 hover:bg-opacity-80 text-white rounded-full p-3 transition-all shadow-lg border border-gray-600"
                 title="Next image (→)"
               >
-                <ChevronRight className="h-6 w-6" />
+                <ChevronRight className="h-8 w-8 stroke-white stroke-2" />
               </button>
             </>
           )}
