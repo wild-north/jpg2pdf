@@ -30,14 +30,29 @@ const upload = multer({
   }
 });
 
-async function compressImages(files, quality = 80) {
-  console.log(`Compressing ${files.length} images with quality ${quality}`);
+async function compressImages(files, options = {}) {
+  const { quality = 80, maxWidth = null, maxHeight = null } = options;
+  console.log(`Compressing ${files.length} images with quality ${quality}${maxWidth ? `, maxWidth ${maxWidth}` : ''}${maxHeight ? `, maxHeight ${maxHeight}` : ''}`);
   
   const compressedFiles = [];
   
   for (const file of files) {
     try {
-      const compressedBuffer = await sharp(file.buffer)
+      let sharpImage = sharp(file.buffer);
+      
+      // Get original dimensions
+      const metadata = await sharpImage.metadata();
+      console.log(`Original ${file.originalname}: ${metadata.width}x${metadata.height}, ${file.buffer.length} bytes`);
+      
+      // Resize if dimensions are specified
+      if (maxWidth || maxHeight) {
+        sharpImage = sharpImage.resize(maxWidth, maxHeight, {
+          fit: 'inside',
+          withoutEnlargement: true
+        });
+      }
+      
+      const compressedBuffer = await sharpImage
         .jpeg({ quality, mozjpeg: true })
         .toBuffer();
       
@@ -46,10 +61,10 @@ async function compressImages(files, quality = 80) {
         buffer: compressedBuffer
       });
       
-      console.log(`Compressed ${file.originalname}: ${file.buffer.length} -> ${compressedBuffer.length} bytes (${Math.round((1 - compressedBuffer.length / file.buffer.length) * 100)}% reduction)`);
+      const reduction = Math.round((1 - compressedBuffer.length / file.buffer.length) * 100);
+      console.log(`Compressed ${file.originalname}: ${file.buffer.length} -> ${compressedBuffer.length} bytes (${reduction}% reduction)`);
     } catch (error) {
       console.error(`Error compressing ${file.originalname}: ${error.message}`);
-      // If compression fails, use original
       compressedFiles.push(file);
     }
   }
@@ -76,24 +91,35 @@ async function createPdfFromBuffers(files, maxSizeBytes = null) {
   if (maxSizeBytes && pdfBytes.length > maxSizeBytes) {
     console.log(`PDF size (${(pdfBytes.length / (1024 * 1024)).toFixed(2)} MB) exceeds limit, applying compression...`);
     
-    // Try different quality levels: 70, 60, 50, 40, 30
-    const qualityLevels = [70, 60, 50, 40, 30];
+    // Compression strategies: progressively more aggressive
+    const compressionStrategies = [
+      { quality: 70 },
+      { quality: 60 },
+      { quality: 50 },
+      { quality: 40, maxWidth: 2048, maxHeight: 2048 },
+      { quality: 35, maxWidth: 1920, maxHeight: 1920 },
+      { quality: 30, maxWidth: 1600, maxHeight: 1600 },
+      { quality: 25, maxWidth: 1200, maxHeight: 1200 },
+      { quality: 20, maxWidth: 1024, maxHeight: 1024 },
+      { quality: 15, maxWidth: 800, maxHeight: 800 }
+    ];
     
-    for (const quality of qualityLevels) {
-      const compressedFiles = await compressImages(files, quality);
+    for (const strategy of compressionStrategies) {
+      const compressedFiles = await compressImages(files, strategy);
       const compressedPdfBytes = await generatePdfFromFiles(compressedFiles);
       
-      console.log(`Quality ${quality}: PDF size ${(compressedPdfBytes.length / (1024 * 1024)).toFixed(2)} MB`);
+      const sizeMB = (compressedPdfBytes.length / (1024 * 1024)).toFixed(2);
+      const strategyDesc = `Quality ${strategy.quality}${strategy.maxWidth ? `, resize ${strategy.maxWidth}px` : ''}`;
+      console.log(`${strategyDesc}: PDF size ${sizeMB} MB`);
       
       if (compressedPdfBytes.length <= maxSizeBytes) {
-        console.log(`✅ Size target achieved with quality ${quality}`);
+        console.log(`✅ Size target achieved with ${strategyDesc}`);
         return compressedPdfBytes;
       }
-      
       pdfBytes = compressedPdfBytes; // Keep the last attempt
     }
     
-    console.log(`⚠️ Could not achieve size limit, using lowest quality result`);
+    console.log(`⚠️ Could not achieve size limit, using most compressed result`);
   }
 
   return pdfBytes;
