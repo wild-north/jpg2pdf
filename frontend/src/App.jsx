@@ -524,31 +524,53 @@ function App() {
 
             {/* Thumbnail carousel */}
             {images.length > 1 && (
-              <div className="flex justify-center gap-2 overflow-x-auto pb-2">
-                {images.map((image, index) => (
-                  <div
-                    key={image.id}
-                    className={`relative cursor-pointer flex-shrink-0 ${
-                      index === enlargedImageIndex 
-                        ? 'ring-2 ring-blue-400' 
-                        : 'opacity-70 hover:opacity-100'
-                    }`}
-                    onClick={() => handleThumbnailClick(index)}
-                  >
-                    <img
-                      src={image.preview}
-                      alt={image.name}
-                      className="w-16 h-16 object-cover rounded"
-                      draggable={false}
-                    />
-                    {/* Page number overlay */}
-                    <div className="absolute inset-0 flex items-center justify-center">
-                      <span className="bg-black bg-opacity-70 text-white text-xs font-bold px-1 rounded">
-                        {index + 1}
-                      </span>
+              <div className="flex justify-center overflow-x-auto pb-2">
+                <ReactSortable
+                  list={images}
+                  setList={(newImages) => {
+                    // Find current image in new order
+                    const currentImage = images[enlargedImageIndex]
+                    const newIndex = newImages.findIndex(img => img.id === currentImage.id)
+                    
+                    // Update images and current index
+                    setImages(newImages)
+                    setEnlargedImageIndex(newIndex)
+                  }}
+                  className="flex gap-2"
+                  animation={150}
+                  ghostClass="opacity-30"
+                  chosenClass="scale-105"
+                >
+                  {images.map((image, index) => (
+                    <div
+                      key={image.id}
+                      className={`relative cursor-pointer flex-shrink-0 transition-all duration-200 group ${
+                        index === enlargedImageIndex 
+                          ? 'ring-2 ring-blue-400' 
+                          : 'opacity-70 hover:opacity-100'
+                      } hover:scale-105`}
+                      onClick={() => handleThumbnailClick(index)}
+                      title={`Page ${index + 1}: ${image.name} - Drag to reorder`}
+                    >
+                      <img
+                        src={image.preview}
+                        alt={image.name}
+                        className="w-16 h-16 object-cover rounded select-none"
+                        draggable={false}
+                      />
+                      {/* Page number overlay */}
+                      <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                        <span className="bg-black bg-opacity-70 text-white text-xs font-bold px-1 rounded">
+                          {index + 1}
+                        </span>
+                      </div>
+                      {/* Drag indicator */}
+                      <div className="absolute -top-1 -right-1 bg-blue-500 text-white rounded-full w-4 h-4 flex items-center justify-center text-xs opacity-0 group-hover:opacity-100 transition-opacity">
+                        <Move className="h-2 w-2" />
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  ))}
+                </ReactSortable>
               </div>
             )}
           </div>
