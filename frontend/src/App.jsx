@@ -1,6 +1,6 @@
 import { useState, useCallback, useRef, useEffect } from 'react'
 import { ReactSortable } from 'react-sortablejs'
-import { Upload, FileImage, Download, Trash2, Move, FileText, Expand, X } from 'lucide-react'
+import { Upload, FileImage, Download, Trash2, Move, FileText, Expand, X, ChevronLeft, ChevronRight } from 'lucide-react'
 
 function App() {
   const [images, setImages] = useState([])
@@ -8,7 +8,7 @@ function App() {
   const [progress, setProgress] = useState(0)
   const [generatedPdfUrl, setGeneratedPdfUrl] = useState(null)
   const [autoDownload, setAutoDownload] = useState(false)
-  const [enlargedImage, setEnlargedImage] = useState(null)
+  const [enlargedImageIndex, setEnlargedImageIndex] = useState(null)
   const fileInputRef = useRef(null)
 
   const handleFileSelect = useCallback(async (files) => {
@@ -150,29 +150,58 @@ function App() {
   }
 
   const handleEnlargeImage = useCallback((image) => {
-    setEnlargedImage(image)
-  }, [])
+    const index = images.findIndex(img => img.id === image.id)
+    setEnlargedImageIndex(index)
+  }, [images])
 
   const handleCloseModal = useCallback(() => {
-    setEnlargedImage(null)
+    setEnlargedImageIndex(null)
   }, [])
 
-  // Handle Escape key to close modal
+  const handlePrevImage = useCallback(() => {
+    setEnlargedImageIndex(prev => {
+      if (prev === null) return null
+      return prev > 0 ? prev - 1 : images.length - 1 // Loop to last image
+    })
+  }, [images.length])
+
+  const handleNextImage = useCallback(() => {
+    setEnlargedImageIndex(prev => {
+      if (prev === null) return null
+      return prev < images.length - 1 ? prev + 1 : 0 // Loop to first image
+    })
+  }, [images.length])
+
+  const handleThumbnailClick = useCallback((index) => {
+    setEnlargedImageIndex(index)
+  }, [])
+
+  // Handle keyboard navigation
   useEffect(() => {
     const handleKeyDown = (e) => {
-      if (e.key === 'Escape' && enlargedImage) {
-        setEnlargedImage(null)
+      if (enlargedImageIndex !== null) {
+        switch (e.key) {
+          case 'Escape':
+            setEnlargedImageIndex(null)
+            break
+          case 'ArrowLeft':
+            handlePrevImage()
+            break
+          case 'ArrowRight':
+            handleNextImage()
+            break
+        }
       }
     }
 
-    if (enlargedImage) {
+    if (enlargedImageIndex !== null) {
       document.addEventListener('keydown', handleKeyDown)
     }
 
     return () => {
       document.removeEventListener('keydown', handleKeyDown)
     }
-  }, [enlargedImage])
+  }, [enlargedImageIndex, handlePrevImage, handleNextImage])
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100">
@@ -348,12 +377,12 @@ function App() {
         )}
       </div>
 
-      {/* Image Enlargement Modal */}
-      {enlargedImage && (
+      {/* Image Carousel Modal */}
+      {enlargedImageIndex !== null && images[enlargedImageIndex] && (
         <div 
-          className="fixed inset-0 bg-black bg-opacity-90 z-50 flex items-center justify-center"
+          className="fixed inset-0 bg-black bg-opacity-90 z-50"
           onClick={(e) => {
-            // Close modal when clicking on overlay (not on image)
+            // Close modal when clicking on overlay 
             if (e.target === e.currentTarget) {
               handleCloseModal()
             }
@@ -368,19 +397,75 @@ function App() {
             <X className="h-6 w-6" />
           </button>
 
-          {/* Enlarged image */}
-          <img 
-            src={enlargedImage.preview}
-            alt={enlargedImage.name}
-            className="max-h-full max-w-full object-contain select-none"
-            draggable={false}
-          />
+          {/* Navigation arrows */}
+          {images.length > 1 && (
+            <>
+              <button
+                onClick={handlePrevImage}
+                className="absolute left-4 top-1/2 transform -translate-y-1/2 bg-white bg-opacity-20 hover:bg-opacity-30 text-white rounded-full p-3 transition-all"
+                title="Previous image (←)"
+              >
+                <ChevronLeft className="h-6 w-6" />
+              </button>
+              
+              <button
+                onClick={handleNextImage}
+                className="absolute right-4 top-1/2 transform -translate-y-1/2 bg-white bg-opacity-20 hover:bg-opacity-30 text-white rounded-full p-3 transition-all"
+                title="Next image (→)"
+              >
+                <ChevronRight className="h-6 w-6" />
+              </button>
+            </>
+          )}
 
-          {/* Image info */}
-          <div className="absolute bottom-4 left-4 right-4 text-center">
-            <p className="text-white text-sm bg-black bg-opacity-50 rounded px-3 py-2 inline-block">
-              {enlargedImage.name}
-            </p>
+          {/* Main image container */}
+          <div className="flex items-center justify-center h-full pb-32 pt-16">
+            <img 
+              src={images[enlargedImageIndex].preview}
+              alt={images[enlargedImageIndex].name}
+              className="max-h-full max-w-full object-contain select-none"
+              draggable={false}
+            />
+          </div>
+
+          {/* Bottom panel with thumbnails */}
+          <div className="absolute bottom-0 left-0 right-0 bg-black bg-opacity-70 p-4">
+            {/* Image info */}
+            <div className="text-center mb-4">
+              <p className="text-white text-sm">
+                {images[enlargedImageIndex].name} ({enlargedImageIndex + 1} of {images.length})
+              </p>
+            </div>
+
+            {/* Thumbnail carousel */}
+            {images.length > 1 && (
+              <div className="flex justify-center gap-2 overflow-x-auto pb-2">
+                {images.map((image, index) => (
+                  <div
+                    key={image.id}
+                    className={`relative cursor-pointer flex-shrink-0 ${
+                      index === enlargedImageIndex 
+                        ? 'ring-2 ring-blue-400' 
+                        : 'opacity-70 hover:opacity-100'
+                    }`}
+                    onClick={() => handleThumbnailClick(index)}
+                  >
+                    <img
+                      src={image.preview}
+                      alt={image.name}
+                      className="w-16 h-16 object-cover rounded"
+                      draggable={false}
+                    />
+                    {/* Page number overlay */}
+                    <div className="absolute inset-0 flex items-center justify-center">
+                      <span className="bg-black bg-opacity-70 text-white text-xs font-bold px-1 rounded">
+                        {index + 1}
+                      </span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         </div>
       )}
