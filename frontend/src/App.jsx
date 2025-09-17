@@ -14,6 +14,13 @@ function App() {
   const [enlargedImageIndex, setEnlargedImageIndex] = useState(null)
   const fileInputRef = useRef(null)
 
+  const naturalSort = (a, b) => {
+    return a.name.localeCompare(b.name, undefined, {
+      numeric: true,
+      sensitivity: 'base'
+    })
+  }
+
   const handleFileSelect = useCallback(async (files) => {
     const fileArray = Array.from(files).filter(file => 
       file.type.startsWith('image/jpeg') || file.type.startsWith('image/jpg')
@@ -36,7 +43,12 @@ function App() {
       })
     }
     
-    setImages(prev => [...prev, ...newImages])
+    newImages.sort(naturalSort)
+    
+    setImages(prev => {
+      const allImages = [...prev, ...newImages]
+      return allImages.sort(naturalSort)
+    })
   }, [])
 
   // Format file size for display
