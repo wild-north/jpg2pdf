@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef } from 'react'
+import { useState, useCallback, useRef, useEffect } from 'react'
 import { ReactSortable } from 'react-sortablejs'
 import { Upload, FileImage, Download, Trash2, Move, FileText } from 'lucide-react'
 
@@ -8,6 +8,7 @@ function App() {
   const [progress, setProgress] = useState(0)
   const [generatedPdfUrl, setGeneratedPdfUrl] = useState(null)
   const [autoDownload, setAutoDownload] = useState(false)
+  const [enlargedImage, setEnlargedImage] = useState(null)
   const fileInputRef = useRef(null)
 
   const handleFileSelect = useCallback(async (files) => {
@@ -89,7 +90,7 @@ function App() {
     try {
       const formData = new FormData()
       // Add images in the exact order they appear in the array
-      images.forEach((image, index) => {
+      images.forEach((image) => {
         formData.append('images', image.file)
       })
 
@@ -147,6 +148,33 @@ function App() {
       document.body.removeChild(a)
     }
   }
+
+  const handleImageMouseDown = useCallback((image) => {
+    setEnlargedImage(image)
+  }, [])
+
+  const handleImageMouseUp = useCallback(() => {
+    setEnlargedImage(null)
+  }, [])
+
+  const handleModalClick = useCallback((e) => {
+    // Close modal when clicking on overlay (not on image itself)
+    if (e.target === e.currentTarget) {
+      setEnlargedImage(null)
+    }
+  }, [])
+
+  // Handle Escape key to close modal
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if (e.key === 'Escape' && enlargedImage) {
+        setEnlargedImage(null)
+      }
+    }
+
+    document.addEventListener('keydown', handleKeyDown)
+    return () => document.removeEventListener('keydown', handleKeyDown)
+  }, [enlargedImage])
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100">
@@ -218,7 +246,13 @@ function App() {
                     <img 
                       src={image.preview} 
                       alt={image.name}
-                      className="w-full h-full object-cover"
+                      className="w-full h-full object-cover cursor-pointer"
+                      onMouseDown={(e) => {
+                        e.preventDefault()
+                        handleImageMouseDown(image)
+                      }}
+                      onMouseUp={handleImageMouseUp}
+                      onMouseLeave={handleImageMouseUp}
                     />
                   </div>
                   <div className="absolute top-2 left-2 bg-blue-500 text-white rounded-full w-6 h-6 flex items-center justify-center text-sm font-medium">
@@ -313,6 +347,23 @@ function App() {
           </div>
         )}
       </div>
+
+      {/* Image Enlargement Modal */}
+      {enlargedImage && (
+        <div 
+          className="fixed inset-0 bg-black bg-opacity-90 z-50 flex items-center justify-center cursor-pointer"
+          onMouseUp={handleImageMouseUp}
+          onClick={handleModalClick}
+        >
+          <img 
+            src={enlargedImage.preview}
+            alt={enlargedImage.name}
+            className="max-h-full max-w-full object-contain select-none"
+            onMouseUp={handleImageMouseUp}
+            draggable={false}
+          />
+        </div>
+      )}
     </div>
   )
 }
