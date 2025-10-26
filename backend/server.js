@@ -9,6 +9,7 @@ import sharp from 'sharp';
 
 const app = express();
 const PORT = process.env.PORT || 3001;
+const BASE_PATH = process.env.BASE_PATH || '';
 
 app.use(cors());
 app.use(express.json());
@@ -154,7 +155,7 @@ async function generatePdfFromFiles(files) {
   return await pdfDoc.save();
 }
 
-app.post('/api/generate-pdf', upload.array('images'), async (req, res) => {
+app.post(`${BASE_PATH}/api/generate-pdf`, upload.array('images'), async (req, res) => {
   try {
     if (!req.files || req.files.length === 0) {
       return res.status(400).json({ error: 'No images uploaded' });
@@ -162,7 +163,6 @@ app.post('/api/generate-pdf', upload.array('images'), async (req, res) => {
 
     console.log(`Received ${req.files.length} files for PDF generation`);
     
-    // Get file size limit from form data
     let maxSizeBytes = null;
     if (req.body.maxSizeMB) {
       maxSizeBytes = parseFloat(req.body.maxSizeMB) * 1024 * 1024;
@@ -183,29 +183,27 @@ app.post('/api/generate-pdf', upload.array('images'), async (req, res) => {
   }
 });
 
-app.get('/api/health', (req, res) => {
+app.get(`${BASE_PATH}/api/health`, (req, res) => {
   res.json({ status: 'OK', message: 'JPG2PDF API is running' });
 });
 
-// Serve static files only if build exists (production mode)
 const frontendDistPath = join(process.cwd(), 'frontend/dist');
 const indexHtmlPath = join(frontendDistPath, 'index.html');
 
 if (fs.existsSync(indexHtmlPath)) {
-  app.use(express.static('frontend/dist'));
+  app.use(BASE_PATH, express.static('frontend/dist'));
   
-  app.get('*', (req, res) => {
+  app.get(`${BASE_PATH}*`, (req, res) => {
     res.sendFile(indexHtmlPath);
   });
   
-  console.log('📁 Serving frontend from dist/');
+  console.log(`📁 Serving frontend from dist/ at ${BASE_PATH || '/'}`);
 } else {
-  // In development mode, frontend runs on its own port
-  app.get('*', (req, res) => {
+  app.get(`${BASE_PATH}/`, (req, res) => {
     res.json({ 
       message: 'JPG2PDF API Server', 
       frontend: 'Run frontend separately in development mode',
-      api: '/api/generate-pdf'
+      api: `${BASE_PATH}/api/generate-pdf`
     });
   });
   
@@ -213,6 +211,6 @@ if (fs.existsSync(indexHtmlPath)) {
 }
 
 app.listen(PORT, () => {
-  console.log(`🚀 JPG2PDF server running on http://localhost:${PORT}`);
-  console.log(`📁 API endpoint: http://localhost:${PORT}/api/generate-pdf`);
+  console.log(`🚀 JPG2PDF server running on http://localhost:${PORT}${BASE_PATH}`);
+  console.log(`📁 API endpoint: http://localhost:${PORT}${BASE_PATH}/api/generate-pdf`);
 });

@@ -130,7 +130,8 @@ function App() {
         })
       }, 200)
 
-      const response = await fetch('/api/generate-pdf', {
+      const basePath = import.meta.env.BASE_URL.replace(/\/$/, '')
+      const response = await fetch(`${basePath}/api/generate-pdf`, {
         method: 'POST',
         body: formData
       })
