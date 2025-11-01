@@ -14,11 +14,15 @@ jobs:
       - name: Deploy via SSH
         id: deploy
         uses: appleboy/ssh-action@v1.0.3
+        env:
+          LM_STUDIO_URL: ${{ vars.LM_STUDIO_URL }}
+          PORT: ${{ vars.PORT || '3000' }}
         with:
           host: ${{ secrets.SSH_HOST }}
           port: ${{ secrets.SSH_PORT }}
           username: ${{ secrets.SSH_USER }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
+          envs: LM_STUDIO_URL,PORT
           script: |
             set -e
             
@@ -27,6 +31,15 @@ jobs:
             echo "=========================================="
             
             cd ~/apps/jpg2pdf
+            
+            echo ""
+            echo "Creating .env file from GitHub variables..."
+            cat > .env << EOF
+PORT=${PORT}
+NODE_ENV=production
+LM_STUDIO_URL=${LM_STUDIO_URL}
+EOF
+            echo "✓ .env file created successfully"
             
             echo "Current directory: $(pwd)"
             echo "Git status before pull:"
