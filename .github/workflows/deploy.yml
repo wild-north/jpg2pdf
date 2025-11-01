@@ -177,26 +177,76 @@ jobs:
             echo "✓ jq is already installed"
           fi
 
-      - name: Get Recent Commits
+      - name: Get Previous Deployment
         if: steps.deploy.outcome == 'success' && !contains(steps.deploy.outputs.stdout, 'DEPLOYMENT_SKIPPED')
+        id: prev_deploy
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const deployments = await github.rest.repos.listDeployments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              environment: 'production',
+              per_page: 2
+            });
+            
+            if (deployments.data.length >= 2) {
+              return deployments.data[1].sha;
+            }
+            
+            const commits = await github.rest.repos.listCommits({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              per_page: 10
+            });
+            
+            return commits.data[5]?.sha || commits.data[commits.data.length - 1]?.sha;
+      
+      - name: Create Deployment Record
+        if: steps.deploy.outcome == 'success' && !contains(steps.deploy.outputs.stdout, 'DEPLOYMENT_SKIPPED')
+        uses: actions/github-script@v7
+        with:
+          script: |
+            await github.rest.repos.createDeployment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              ref: context.sha,
+              environment: 'production',
+              auto_merge: false,
+              required_contexts: []
+            });
+      
+      - name: Fetch Deployed Commits
+        if: steps.deploy.outcome == 'success' && steps.prev_deploy.outputs.result
         id: commits
         run: |
-          echo "Fetching last 10 commits from GitHub API..."
+          OLD_COMMIT="${{ steps.prev_deploy.outputs.result }}"
+          NEW_COMMIT="${{ github.sha }}"
           
-          COMMITS=$(curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
-            "https://api.github.com/repos/${{ github.repository }}/commits?sha=main&per_page=10" | \
-            jq -r '.[] | "- `\(.sha[0:7])` **\(.commit.message | split("\n")[0])** _by \(.commit.author.name)_"' | \
-            head -5 | \
-            tr '\n' '|')
+          echo "Commit range: $OLD_COMMIT...$NEW_COMMIT"
           
-          if [ -z "$COMMITS" ]; then
-            echo "⚠️ Warning: No commits found"
-            echo "commits_list=" >> $GITHUB_OUTPUT
+          if [ -z "$OLD_COMMIT" ] || [ "$OLD_COMMIT" = "null" ]; then
+            echo "⚠️ No previous deployment found, showing recent commits"
+            curl -s --max-time 10 \
+              -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+              "https://api.github.com/repos/${{ github.repository }}/commits?per_page=5" > commits.json
+            
+            COMMITS=$(cat commits.json)
           else
-            COMMIT_COUNT=$(echo "$COMMITS" | tr '|' '\n' | grep -c "^-" || echo "0")
-            echo "✓ Found $COMMIT_COUNT commits"
-            echo "commits_list=$COMMITS" >> $GITHUB_OUTPUT
+            echo "Fetching commits from GitHub API..."
+            curl -s --max-time 10 \
+              -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+              "https://api.github.com/repos/${{ github.repository }}/compare/${OLD_COMMIT}...${NEW_COMMIT}" > compare.json
+            
+            COMMITS=$(jq '.commits' compare.json)
           fi
+          
+          echo "commits_json<<EOF" >> $GITHUB_OUTPUT
+          echo "$COMMITS" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+          
+          COMMIT_COUNT=$(echo "$COMMITS" | jq 'length')
+          echo "✓ Found $COMMIT_COUNT commits"
 
       - name: Create Deployment Summary
         if: always()
@@ -217,12 +267,12 @@ jobs:
               echo "" >> $GITHUB_STEP_SUMMARY
               echo "✓ Health check passed successfully" >> $GITHUB_STEP_SUMMARY
               echo "" >> $GITHUB_STEP_SUMMARY
-              echo "### 📝 Recent Commits" >> $GITHUB_STEP_SUMMARY
+              echo "### 📝 Deployed Commits" >> $GITHUB_STEP_SUMMARY
               echo "" >> $GITHUB_STEP_SUMMARY
               
-              COMMITS_LIST="${{ steps.commits.outputs.commits_list }}"
-              if [ -n "$COMMITS_LIST" ]; then
-                echo "$COMMITS_LIST" | tr '|' '\n' >> $GITHUB_STEP_SUMMARY
+              COMMITS_JSON='${{ steps.commits.outputs.commits_json }}'
+              if [ -n "$COMMITS_JSON" ] && [ "$COMMITS_JSON" != "null" ]; then
+                echo "$COMMITS_JSON" | jq -r '.[] | "- [\(.sha[0:7])](\(.html_url)) **\(.commit.message | split("\n")[0])** _by \(.commit.author.name)_"' >> $GITHUB_STEP_SUMMARY || echo "_Error parsing commits_" >> $GITHUB_STEP_SUMMARY
               else
                 echo "_No commit information available_" >> $GITHUB_STEP_SUMMARY
               fi
