@@ -57,13 +57,13 @@ jobs:
             
             cd ~/apps/jpg2pdf
             
-            if docker images --format "{{.Repository}}:{{.Tag}}" | grep -q "^jpg2pdf:${{ github.event.inputs.backup_tag }}$"; then
+            if docker images --format "{{.Repository}}:{{.Tag}}" | grep -q "^jpg2pdf-jpg2pdf:${{ github.event.inputs.backup_tag }}$"; then
               echo "✓ Backup tag found!"
             else
               echo "✗ Error: Backup tag '${{ github.event.inputs.backup_tag }}' not found"
               echo ""
               echo "Available backups:"
-              docker images --format "{{.Repository}}:{{.Tag}}" | grep "^jpg2pdf:"
+              docker images --format "{{.Repository}}:{{.Tag}}" | grep "^jpg2pdf-jpg2pdf:"
               exit 1
             fi
 
@@ -86,10 +86,10 @@ jobs:
             
             echo ""
             echo "Creating safety backup of current state..."
-            SAFETY_BACKUP_TAG="jpg2pdf:rollback_safety_$(date +%Y%m%d_%H%M%S)"
+            SAFETY_BACKUP_TAG="jpg2pdf-jpg2pdf:rollback_safety_$(date +%Y%m%d_%H%M%S)"
             
-            if docker images | grep -q "^jpg2pdf.*latest"; then
-              docker tag jpg2pdf:latest ${SAFETY_BACKUP_TAG}
+            if docker images | grep -q "^jpg2pdf-jpg2pdf.*latest"; then
+              docker tag jpg2pdf-jpg2pdf:latest ${SAFETY_BACKUP_TAG}
               echo "✓ Safety backup created: ${SAFETY_BACKUP_TAG}"
             else
               echo "ℹ️  No current image to backup"
@@ -100,8 +100,8 @@ jobs:
             docker compose down
             
             echo ""
-            echo "Rolling back to: jpg2pdf:${{ github.event.inputs.backup_tag }}"
-            docker tag jpg2pdf:${{ github.event.inputs.backup_tag }} jpg2pdf:latest
+            echo "Rolling back to: jpg2pdf-jpg2pdf:${{ github.event.inputs.backup_tag }}"
+            docker tag jpg2pdf-jpg2pdf:${{ github.event.inputs.backup_tag }} jpg2pdf-jpg2pdf:latest
             
             echo ""
             echo "Starting containers with rolled back image..."

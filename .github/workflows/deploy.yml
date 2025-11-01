@@ -35,11 +35,11 @@ jobs:
             echo "Creating backup of current Docker image..."
             
             BACKUP_TIMESTAMP=$(date +%Y%m%d_%H%M%S)
-            BACKUP_TAG="jpg2pdf:backup_${BACKUP_TIMESTAMP}"
+            BACKUP_TAG="jpg2pdf-jpg2pdf:backup_${BACKUP_TIMESTAMP}"
             
-            if docker images | grep -q "^jpg2pdf "; then
+            if docker images | grep -q "^jpg2pdf-jpg2pdf "; then
               echo "Tagging current image as ${BACKUP_TAG}"
-              docker tag jpg2pdf:latest ${BACKUP_TAG}
+              docker tag jpg2pdf-jpg2pdf:latest ${BACKUP_TAG}
               echo "Backup created successfully!"
             else
               echo "No existing image found, skipping backup"
@@ -48,8 +48,8 @@ jobs:
             echo ""
             echo "Cleaning up old backups (keeping only 2 most recent)..."
             
-            BACKUP_IMAGES=$(docker images --format "{{.Repository}}:{{.Tag}}" | grep "^jpg2pdf:backup_" | sort -r)
-            BACKUP_COUNT=$(echo "$BACKUP_IMAGES" | grep -c "^jpg2pdf:backup_" || true)
+            BACKUP_IMAGES=$(docker images --format "{{.Repository}}:{{.Tag}}" | grep "^jpg2pdf-jpg2pdf:backup_" | sort -r)
+            BACKUP_COUNT=$(echo "$BACKUP_IMAGES" | grep -c "^jpg2pdf-jpg2pdf:backup_" || true)
             
             if [ "$BACKUP_COUNT" -gt 2 ]; then
               echo "Found ${BACKUP_COUNT} backups, removing old ones..."
