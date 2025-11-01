@@ -276,7 +276,9 @@ jobs:
               
               COMMITS_JSON='${{ steps.commits.outputs.commits_json }}'
               if [ -n "$COMMITS_JSON" ] && [ "$COMMITS_JSON" != "null" ]; then
-                echo "$COMMITS_JSON" | jq -r '.[] | "- [\(.sha[0:7])](\(.html_url)) **\(.commit.message | split("\n")[0])** _by \(.commit.author.name)_"' >> $GITHUB_STEP_SUMMARY || echo "_Error parsing commits_" >> $GITHUB_STEP_SUMMARY
+                echo "$COMMITS_JSON" > commits_temp.json
+                jq -r '.[] | "- [\(.sha[0:7])](\(.html_url)) **\(.commit.message | split("\n")[0] | gsub("[\\n\\r]"; " ") | gsub("\""; "\\\""))** _by \(.commit.author.name)_"' commits_temp.json >> $GITHUB_STEP_SUMMARY 2>/dev/null || echo "_Error parsing commits_" >> $GITHUB_STEP_SUMMARY
+                rm -f commits_temp.json
               else
                 echo "_No commit information available_" >> $GITHUB_STEP_SUMMARY
               fi
