@@ -14,6 +14,7 @@ jobs:
 
     steps:
       - name: List Available Backups
+        id: list_backups
         uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ secrets.SSH_HOST }}
@@ -35,18 +36,15 @@ jobs:
             echo ""
             echo "=========================================="
             
-            docker images --format "- \`{{.Tag}}\` - {{.CreatedAt}} ({{.Size}})" | grep "backup_" > /tmp/rollback_backups || echo "No backups found" > /tmp/rollback_backups
-            
             if [ -z "${{ github.event.inputs.backup_tag }}" ]; then
               echo "ℹ️  No backup tag provided - showing available backups only"
               echo "To rollback, run this workflow again with a backup_tag parameter"
-              echo "LIST_ONLY" > /tmp/rollback_status
             else
               echo "🔄 Will proceed with rollback to: ${{ github.event.inputs.backup_tag }}"
-              echo "${{ github.event.inputs.backup_tag }}" > /tmp/rollback_target
             fi
 
       - name: Verify Backup Exists
+        id: verify
         if: ${{ github.event.inputs.backup_tag != '' }}
         uses: appleboy/ssh-action@v1.0.3
         with:
@@ -68,7 +66,6 @@ jobs:
               echo ""
               echo "Available backups:"
               docker images --format "{{.Repository}}:{{.Tag}}" | grep "^jpg2pdf-jpg2pdf:"
-              echo "BACKUP_NOT_FOUND" > /tmp/rollback_status
               exit 1
             fi
 
@@ -116,6 +113,7 @@ jobs:
             echo "✓ Rollback completed!"
 
       - name: Health Check
+        id: health_check
         if: ${{ github.event.inputs.backup_tag != '' }}
         uses: appleboy/ssh-action@v1.0.3
         with:
@@ -142,7 +140,6 @@ jobs:
               
               if wget --spider --quiet --tries=1 --timeout=2 "$HEALTHCHECK_URL" 2>/dev/null; then
                 echo "✓ Application is healthy after rollback!"
-                echo "SUCCESS" > /tmp/rollback_status
                 break
               fi
               
@@ -153,7 +150,6 @@ jobs:
                 docker compose logs --tail=50
                 echo ""
                 echo "⚠️  Rollback may have failed. Check logs above."
-                echo "HEALTH_CHECK_FAILED" > /tmp/rollback_status
                 exit 1
               fi
               
@@ -185,65 +181,48 @@ jobs:
             echo "=========================================="
             docker images | grep "jpg2pdf" || echo "No jpg2pdf images found"
 
-      - name: Create Summary
+      - name: Create Rollback Summary
         if: always()
-        uses: appleboy/ssh-action@v1.0.3
-        with:
-          host: ${{ secrets.SSH_HOST }}
-          port: ${{ secrets.SSH_PORT }}
-          username: ${{ secrets.SSH_USER }}
-          key: ${{ secrets.SSH_PRIVATE_KEY }}
-          script: |
-            cd ~/apps/jpg2pdf
-            
-            echo "## 📋 Available Backups" >> $GITHUB_STEP_SUMMARY
+        run: |
+          echo "## 📋 Available Backups" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          if grep -q "No jpg2pdf images found" <<< "${{ steps.list_backups.outputs.stdout }}" 2>/dev/null; then
+            echo "⚠️ No backups available yet. Run a deployment first to create backups." >> $GITHUB_STEP_SUMMARY
+          else
+            echo "Check the workflow logs to see available backup tags." >> $GITHUB_STEP_SUMMARY
+          fi
+          
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "---" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          if [[ -z "${{ github.event.inputs.backup_tag }}" ]]; then
+            echo "ℹ️ **No rollback requested** - showing available backups only." >> $GITHUB_STEP_SUMMARY
             echo "" >> $GITHUB_STEP_SUMMARY
-            
-            if [ -f /tmp/rollback_backups ]; then
-              BACKUP_LIST=$(cat /tmp/rollback_backups)
-              if [ "$BACKUP_LIST" = "No backups found" ]; then
-                echo "⚠️ No backups available yet. Run a deployment first to create backups." >> $GITHUB_STEP_SUMMARY
-              else
-                cat /tmp/rollback_backups >> $GITHUB_STEP_SUMMARY
-              fi
-            fi
-            
+            echo "To rollback, run this workflow again with a \`backup_tag\` parameter." >> $GITHUB_STEP_SUMMARY
+          elif [[ "${{ steps.verify.outcome }}" == "failure" ]]; then
+            echo "## ❌ Rollback Failed" >> $GITHUB_STEP_SUMMARY
             echo "" >> $GITHUB_STEP_SUMMARY
-            echo "---" >> $GITHUB_STEP_SUMMARY
+            echo "Backup tag \`${{ github.event.inputs.backup_tag }}\` not found." >> $GITHUB_STEP_SUMMARY
             echo "" >> $GITHUB_STEP_SUMMARY
-            
-            if [ -f /tmp/rollback_status ]; then
-              STATUS=$(cat /tmp/rollback_status)
-              
-              if [ "$STATUS" = "LIST_ONLY" ]; then
-                echo "ℹ️ **No rollback requested** - showing available backups only." >> $GITHUB_STEP_SUMMARY
-                echo "" >> $GITHUB_STEP_SUMMARY
-                echo "To rollback, run this workflow again with a \`backup_tag\` parameter." >> $GITHUB_STEP_SUMMARY
-              elif [ "$STATUS" = "BACKUP_NOT_FOUND" ]; then
-                echo "## ❌ Rollback Failed" >> $GITHUB_STEP_SUMMARY
-                echo "" >> $GITHUB_STEP_SUMMARY
-                echo "Backup tag \`${{ github.event.inputs.backup_tag }}\` not found." >> $GITHUB_STEP_SUMMARY
-                echo "" >> $GITHUB_STEP_SUMMARY
-                echo "Please check the available backups above and try again." >> $GITHUB_STEP_SUMMARY
-              elif [ "$STATUS" = "HEALTH_CHECK_FAILED" ]; then
-                echo "## ❌ Rollback Failed" >> $GITHUB_STEP_SUMMARY
-                echo "" >> $GITHUB_STEP_SUMMARY
-                echo "Health check failed after 30 attempts." >> $GITHUB_STEP_SUMMARY
-                echo "" >> $GITHUB_STEP_SUMMARY
-                echo "- 🔙 **Attempted rollback to**: \`${{ github.event.inputs.backup_tag }}\`" >> $GITHUB_STEP_SUMMARY
-                echo "- ⏱️ **Failed at**: $(date '+%Y-%m-%d %H:%M:%S UTC')" >> $GITHUB_STEP_SUMMARY
-                echo "- 🛡️ **Safety backup available**: \`rollback_safety_*\`" >> $GITHUB_STEP_SUMMARY
-                echo "" >> $GITHUB_STEP_SUMMARY
-                echo "Check the logs above for details." >> $GITHUB_STEP_SUMMARY
-              elif [ "$STATUS" = "SUCCESS" ]; then
-                echo "## ✅ Rollback Successful" >> $GITHUB_STEP_SUMMARY
-                echo "" >> $GITHUB_STEP_SUMMARY
-                echo "- 🔙 **Rolled back to**: \`${{ github.event.inputs.backup_tag }}\`" >> $GITHUB_STEP_SUMMARY
-                echo "- ⏱️ **Completed**: $(date '+%Y-%m-%d %H:%M:%S UTC')" >> $GITHUB_STEP_SUMMARY
-                echo "- 🛡️ **Safety backup created**: \`rollback_safety_*\`" >> $GITHUB_STEP_SUMMARY
-                echo "- ✅ **Health check**: Passed" >> $GITHUB_STEP_SUMMARY
-              fi
-              
-              rm -f /tmp/rollback_*
-            fi
+            echo "Please check the available backups above and try again." >> $GITHUB_STEP_SUMMARY
+          elif [[ "${{ steps.health_check.outcome }}" == "failure" ]]; then
+            echo "## ❌ Rollback Failed" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "Health check failed after 30 attempts." >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "- 🔙 **Attempted rollback to**: \`${{ github.event.inputs.backup_tag }}\`" >> $GITHUB_STEP_SUMMARY
+            echo "- ⏱️ **Failed at**: $(date -u '+%Y-%m-%d %H:%M:%S UTC')" >> $GITHUB_STEP_SUMMARY
+            echo "- 🛡️ **Safety backup available**: Check logs for \`rollback_safety_*\` tag" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "💡 **Next steps**: Check container logs and try another backup version" >> $GITHUB_STEP_SUMMARY
+          elif [[ "${{ steps.health_check.outcome }}" == "success" ]]; then
+            echo "## ✅ Rollback Successful" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "- 🔙 **Rolled back to**: \`${{ github.event.inputs.backup_tag }}\`" >> $GITHUB_STEP_SUMMARY
+            echo "- ⏱️ **Completed**: $(date -u '+%Y-%m-%d %H:%M:%S UTC')" >> $GITHUB_STEP_SUMMARY
+            echo "- 🛡️ **Safety backup created**: Check logs for \`rollback_safety_*\` tag" >> $GITHUB_STEP_SUMMARY
+            echo "- ✅ **Health check**: Passed" >> $GITHUB_STEP_SUMMARY
+          fi
 
