@@ -1,0 +1,112 @@
+name: Deploy to Home Server
+
+on:
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          port: ${{ secrets.SSH_PORT }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          script: |
+            set -e
+            
+            echo "=========================================="
+            echo "Starting deployment to ~/apps/jpg2pdf"
+            echo "=========================================="
+            
+            cd ~/apps/jpg2pdf
+            
+            echo "Current directory: $(pwd)"
+            echo "Git status before pull:"
+            git status --short
+            
+            echo ""
+            echo "Creating backup of current Docker image..."
+            
+            BACKUP_TIMESTAMP=$(date +%Y%m%d_%H%M%S)
+            BACKUP_TAG="jpg2pdf:backup_${BACKUP_TIMESTAMP}"
+            
+            if docker images | grep -q "^jpg2pdf "; then
+              echo "Tagging current image as ${BACKUP_TAG}"
+              docker tag jpg2pdf:latest ${BACKUP_TAG}
+              echo "Backup created successfully!"
+            else
+              echo "No existing image found, skipping backup"
+            fi
+            
+            echo ""
+            echo "Cleaning up old backups (keeping only 2 most recent)..."
+            
+            BACKUP_IMAGES=$(docker images --format "{{.Repository}}:{{.Tag}}" | grep "^jpg2pdf:backup_" | sort -r)
+            BACKUP_COUNT=$(echo "$BACKUP_IMAGES" | grep -c "^jpg2pdf:backup_" || true)
+            
+            if [ "$BACKUP_COUNT" -gt 2 ]; then
+              echo "Found ${BACKUP_COUNT} backups, removing old ones..."
+              echo "$BACKUP_IMAGES" | tail -n +3 | while read img; do
+                echo "Removing old backup: $img"
+                docker rmi "$img" || true
+              done
+            else
+              echo "Backup count is ${BACKUP_COUNT}, no cleanup needed"
+            fi
+            
+            echo ""
+            echo "Pulling latest code from repository..."
+            git pull
+            
+            echo ""
+            echo "Stopping current containers..."
+            docker compose down
+            
+            echo ""
+            echo "Building and starting new containers..."
+            docker compose up -d --build
+            
+            echo ""
+            echo "Waiting for container to be healthy..."
+            
+            HEALTHCHECK_URL="http://localhost:3000/jpg2pdf/api/health"
+            MAX_ATTEMPTS=30
+            ATTEMPT=0
+            
+            while [ $ATTEMPT -lt $MAX_ATTEMPTS ]; do
+              ATTEMPT=$((ATTEMPT + 1))
+              echo "Health check attempt $ATTEMPT/$MAX_ATTEMPTS..."
+              
+              if wget --spider --quiet --tries=1 --timeout=2 "$HEALTHCHECK_URL" 2>/dev/null; then
+                echo "✓ Application is healthy!"
+                break
+              fi
+              
+              if [ $ATTEMPT -eq $MAX_ATTEMPTS ]; then
+                echo "✗ Health check failed after $MAX_ATTEMPTS attempts"
+                echo "Container logs:"
+                docker compose logs --tail=50
+                exit 1
+              fi
+              
+              sleep 2
+            done
+            
+            echo ""
+            echo "=========================================="
+            echo "Deployment completed successfully!"
+            echo "=========================================="
+            echo ""
+            echo "Container status:"
+            docker compose ps
+            
+            echo ""
+            echo "Available backups:"
+            docker images | grep "jpg2pdf" || echo "No images found"
