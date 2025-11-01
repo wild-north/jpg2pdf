@@ -68,13 +68,9 @@ jobs:
             
             if echo "$OUTPUT" | grep -q "Already up to date"; then
               echo ""
-              echo "⏭️ No new commits, skipping deployment"
-              echo "## ⏭️ Deployment Skipped" >> $GITHUB_STEP_SUMMARY
-              echo "" >> $GITHUB_STEP_SUMMARY
-              echo "No new commits to deploy." >> $GITHUB_STEP_SUMMARY
-              echo "" >> $GITHUB_STEP_SUMMARY
-              echo "- 📦 **Current commit**: \`$(git rev-parse --short HEAD)\`" >> $GITHUB_STEP_SUMMARY
-              echo "- ⏱️ **Checked at**: $(date '+%Y-%m-%d %H:%M:%S UTC')" >> $GITHUB_STEP_SUMMARY
+              echo "⏭️ DEPLOYMENT_SKIPPED: No new commits"
+              echo "SKIP" > /tmp/deployment_status
+              echo "$(git rev-parse --short HEAD)" > /tmp/deployment_commit
               exit 0
             fi
             
@@ -106,17 +102,9 @@ jobs:
                 echo "✗ Health check failed after $MAX_ATTEMPTS attempts"
                 echo "Container logs:"
                 docker compose logs --tail=50
-                
-                echo "## ❌ Deployment Failed" >> $GITHUB_STEP_SUMMARY
-                echo "" >> $GITHUB_STEP_SUMMARY
-                echo "Health check failed after $MAX_ATTEMPTS attempts." >> $GITHUB_STEP_SUMMARY
-                echo "" >> $GITHUB_STEP_SUMMARY
-                echo "- 📦 **Commit**: \`$(git rev-parse --short HEAD)\`" >> $GITHUB_STEP_SUMMARY
-                echo "- ⏱️ **Failed at**: $(date '+%Y-%m-%d %H:%M:%S UTC')" >> $GITHUB_STEP_SUMMARY
-                echo "- 🐳 **Backup available**: \`${BACKUP_TAG}\`" >> $GITHUB_STEP_SUMMARY
-                echo "" >> $GITHUB_STEP_SUMMARY
-                echo "Check the logs above for details." >> $GITHUB_STEP_SUMMARY
-                
+                echo "FAILED" > /tmp/deployment_status
+                echo "$(git rev-parse --short HEAD)" > /tmp/deployment_commit
+                echo "${BACKUP_TAG}" > /tmp/deployment_backup
                 exit 1
               fi
               
@@ -135,15 +123,75 @@ jobs:
             echo "Available backups:"
             docker images | grep "jpg2pdf" || echo "No images found"
             
-            echo ""
-            echo "Creating deployment summary..."
-            echo "## ✅ Deployment Successful" >> $GITHUB_STEP_SUMMARY
-            echo "" >> $GITHUB_STEP_SUMMARY
-            echo "- 📦 **Commit**: \`$(git rev-parse --short HEAD)\` - $(git log -1 --pretty=%B | head -n 1)" >> $GITHUB_STEP_SUMMARY
-            echo "- ⏱️ **Completed**: $(date '+%Y-%m-%d %H:%M:%S UTC')" >> $GITHUB_STEP_SUMMARY
-            echo "- 🐳 **Backup Created**: \`${BACKUP_TAG}\`" >> $GITHUB_STEP_SUMMARY
-            echo "" >> $GITHUB_STEP_SUMMARY
-            echo "### 📊 Container Status" >> $GITHUB_STEP_SUMMARY
-            echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
-            docker compose ps >> $GITHUB_STEP_SUMMARY
-            echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+            echo "SUCCESS" > /tmp/deployment_status
+            echo "$(git rev-parse --short HEAD)" > /tmp/deployment_commit
+            echo "$(git log -1 --pretty=%B | head -n 1)" > /tmp/deployment_message
+            echo "${BACKUP_TAG}" > /tmp/deployment_backup
+
+      - name: Create Success Summary
+        if: success()
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          port: ${{ secrets.SSH_PORT }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          script: |
+            cd ~/apps/jpg2pdf
+            
+            if [ -f /tmp/deployment_status ]; then
+              STATUS=$(cat /tmp/deployment_status)
+              
+              if [ "$STATUS" = "SKIP" ]; then
+                COMMIT=$(cat /tmp/deployment_commit)
+                echo "## ⏭️ Deployment Skipped" >> $GITHUB_STEP_SUMMARY
+                echo "" >> $GITHUB_STEP_SUMMARY
+                echo "No new commits to deploy." >> $GITHUB_STEP_SUMMARY
+                echo "" >> $GITHUB_STEP_SUMMARY
+                echo "- 📦 **Current commit**: \`${COMMIT}\`" >> $GITHUB_STEP_SUMMARY
+                echo "- ⏱️ **Checked at**: $(date '+%Y-%m-%d %H:%M:%S UTC')" >> $GITHUB_STEP_SUMMARY
+              elif [ "$STATUS" = "SUCCESS" ]; then
+                COMMIT=$(cat /tmp/deployment_commit)
+                MESSAGE=$(cat /tmp/deployment_message)
+                BACKUP=$(cat /tmp/deployment_backup)
+                
+                echo "## ✅ Deployment Successful" >> $GITHUB_STEP_SUMMARY
+                echo "" >> $GITHUB_STEP_SUMMARY
+                echo "- 📦 **Commit**: \`${COMMIT}\` - ${MESSAGE}" >> $GITHUB_STEP_SUMMARY
+                echo "- ⏱️ **Completed**: $(date '+%Y-%m-%d %H:%M:%S UTC')" >> $GITHUB_STEP_SUMMARY
+                echo "- 🐳 **Backup Created**: \`${BACKUP}\`" >> $GITHUB_STEP_SUMMARY
+                echo "" >> $GITHUB_STEP_SUMMARY
+                echo "### 📊 Container Status" >> $GITHUB_STEP_SUMMARY
+                echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+                docker compose ps >> $GITHUB_STEP_SUMMARY
+                echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+              fi
+              
+              rm -f /tmp/deployment_*
+            fi
+
+      - name: Create Failure Summary
+        if: failure()
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          port: ${{ secrets.SSH_PORT }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          script: |
+            if [ -f /tmp/deployment_status ]; then
+              COMMIT=$(cat /tmp/deployment_commit)
+              BACKUP=$(cat /tmp/deployment_backup 2>/dev/null || echo "N/A")
+              
+              echo "## ❌ Deployment Failed" >> $GITHUB_STEP_SUMMARY
+              echo "" >> $GITHUB_STEP_SUMMARY
+              echo "Health check failed after 30 attempts." >> $GITHUB_STEP_SUMMARY
+              echo "" >> $GITHUB_STEP_SUMMARY
+              echo "- 📦 **Commit**: \`${COMMIT}\`" >> $GITHUB_STEP_SUMMARY
+              echo "- ⏱️ **Failed at**: $(date '+%Y-%m-%d %H:%M:%S UTC')" >> $GITHUB_STEP_SUMMARY
+              echo "- 🐳 **Backup available**: \`${BACKUP}\`" >> $GITHUB_STEP_SUMMARY
+              echo "" >> $GITHUB_STEP_SUMMARY
+              echo "Check the deployment logs for details." >> $GITHUB_STEP_SUMMARY
+              
+              rm -f /tmp/deployment_*
+            fi
