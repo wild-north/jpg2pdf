@@ -15,8 +15,8 @@ jobs:
         id: deploy
         uses: appleboy/ssh-action@v1.0.3
         env:
-          LM_STUDIO_URL: ${{ vars.LM_STUDIO_URL }}
-          PORT: ${{ vars.PORT || '3000' }}
+          LM_STUDIO_URL: ${{ secrets.LM_STUDIO_URL }}
+          PORT: ${{ secrets.PORT || '3000' }}
         with:
           host: ${{ secrets.SSH_HOST }}
           port: ${{ secrets.SSH_PORT }}
