@@ -8,11 +8,10 @@ services:
     container_name: jpg2pdf
     ports:
       - "${PORT:-3000}:${PORT:-3000}"
+    env_file:
+      - .env
     environment:
-      - PORT=${PORT:-3000}
-      - NODE_ENV=production
       - BASE_PATH=/jpg2pdf
-      - LM_STUDIO_URL=${LM_STUDIO_URL}
     volumes:
       - ./output:/app/output
     healthcheck:
