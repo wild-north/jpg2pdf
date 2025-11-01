@@ -178,26 +178,33 @@ jobs:
           fi
 
       - name: Get Deployed Commits
-        if: steps.deploy.outcome == 'success'
+        if: steps.deploy.outcome == 'success' && !contains(steps.deploy.outputs.stdout, 'DEPLOYMENT_SKIPPED')
         id: commits
         run: |
           DEPLOY_OUTPUT="${{ steps.deploy.outputs.stdout }}"
           
           echo "=== Searching for commit markers in deploy output ==="
-          OLD_COMMIT=$(echo "$DEPLOY_OUTPUT" | grep -oP 'DEPLOY_OLD_COMMIT=\K[a-f0-9]+' | head -1 | tr -d '\r\n ')
-          NEW_COMMIT=$(echo "$DEPLOY_OUTPUT" | grep -oP 'DEPLOY_NEW_COMMIT=\K[a-f0-9]+' | head -1 | tr -d '\r\n ')
+          echo "Deploy output length: ${#DEPLOY_OUTPUT} characters"
           
-          echo "Old commit: [$OLD_COMMIT]"
-          echo "New commit: [$NEW_COMMIT]"
+          OLD_COMMIT=$(echo "$DEPLOY_OUTPUT" | grep "DEPLOY_OLD_COMMIT=" | sed 's/.*DEPLOY_OLD_COMMIT=//;s/[^a-f0-9].*//' | head -1)
+          NEW_COMMIT=$(echo "$DEPLOY_OUTPUT" | grep "DEPLOY_NEW_COMMIT=" | sed 's/.*DEPLOY_NEW_COMMIT=//;s/[^a-f0-9].*//' | head -1)
+          
+          echo "Old commit: [$OLD_COMMIT] (length: ${#OLD_COMMIT})"
+          echo "New commit: [$NEW_COMMIT] (length: ${#NEW_COMMIT})"
           
           if [ -z "$OLD_COMMIT" ]; then
             echo "⚠️ Warning: Could not find OLD_COMMIT marker"
+            echo "Searching for pattern in output..."
+            echo "$DEPLOY_OUTPUT" | grep -A2 -B2 "DEPLOY_OLD" || echo "Pattern not found"
           fi
           if [ -z "$NEW_COMMIT" ]; then
             echo "⚠️ Warning: Could not find NEW_COMMIT marker"
+            echo "Searching for pattern in output..."
+            echo "$DEPLOY_OUTPUT" | grep -A2 -B2 "DEPLOY_NEW" || echo "Pattern not found"
           fi
           
           if [ -z "$OLD_COMMIT" ] || [ -z "$NEW_COMMIT" ] || [ "$OLD_COMMIT" = "$NEW_COMMIT" ]; then
+            echo "❌ Cannot proceed: missing or identical commits"
             echo "commits_list=" >> $GITHUB_OUTPUT
             exit 0
           fi
