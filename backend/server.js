@@ -10,9 +10,65 @@ import sharp from 'sharp';
 const app = express();
 const PORT = process.env.PORT || 3001;
 const BASE_PATH = process.env.BASE_PATH || '';
+const LM_STUDIO_URL = process.env.LM_STUDIO_URL || 'http://192.168.88.24:1234';
+
+let aiServiceAvailable = false;
 
 app.use(cors());
 app.use(express.json());
+
+async function checkAIServiceHealth() {
+  try {
+    console.log(`🔍 Checking LM Studio availability at ${LM_STUDIO_URL}...`);
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 5000);
+    
+    const response = await fetch(`${LM_STUDIO_URL}/v1/models`, {
+      signal: controller.signal
+    });
+    clearTimeout(timeoutId);
+    
+    if (response.ok) {
+      aiServiceAvailable = true;
+      console.log('✅ LM Studio AI service is available');
+      return true;
+    } else {
+      aiServiceAvailable = false;
+      console.log('⚠️ LM Studio responded but with error status');
+      return false;
+    }
+  } catch (error) {
+    aiServiceAvailable = false;
+    console.log('❌ LM Studio AI service is not available:', error.message);
+    return false;
+  }
+}
+
+async function callAIService(messages, maxTokens = 500) {
+  try {
+    const response = await fetch(`${LM_STUDIO_URL}/v1/chat/completions`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        messages,
+        max_tokens: maxTokens,
+        temperature: 0.7,
+      })
+    });
+
+    if (!response.ok) {
+      throw new Error(`AI service responded with status ${response.status}`);
+    }
+
+    const data = await response.json();
+    return data.choices[0].message.content;
+  } catch (error) {
+    console.error('Error calling AI service:', error.message);
+    throw error;
+  }
+}
 
 const storage = multer.memoryStorage();
 const upload = multer({
@@ -187,6 +243,183 @@ app.get(`${BASE_PATH}/api/health`, (req, res) => {
   res.json({ status: 'OK', message: 'JPG2PDF API is running' });
 });
 
+app.get(`${BASE_PATH}/api/ai/status`, async (req, res) => {
+  await checkAIServiceHealth();
+  res.json({ 
+    available: aiServiceAvailable,
+    url: LM_STUDIO_URL 
+  });
+});
+
+app.post(`${BASE_PATH}/api/ai/analyze`, async (req, res) => {
+  try {
+    if (!aiServiceAvailable) {
+      return res.json({ 
+        available: false, 
+        summary: null,
+        error: 'AI service is not available' 
+      });
+    }
+
+    const { images } = req.body;
+    
+    if (!images || !Array.isArray(images) || images.length === 0) {
+      return res.status(400).json({ error: 'No images provided' });
+    }
+
+    const imagesToAnalyze = images.slice(0, 5);
+    
+    console.log(`📊 Analyzing ${imagesToAnalyze.length} images with AI...`);
+    
+    const content = [
+      {
+        type: 'text',
+        text: 'Analyze these document images and create a brief description in Ukrainian (up to 300 characters). Describe what type of document this is, whose it is, and which pages are shown. Be specific and informative. Example: "Цей документ містить скани всіх сторінок паспорта громадянина України Івана Петренка"'
+      }
+    ];
+
+    imagesToAnalyze.forEach(imageBase64 => {
+      if (!imageBase64.startsWith('data:image')) {
+        imageBase64 = `data:image/jpeg;base64,${imageBase64}`;
+      }
+      content.push({
+        type: 'image_url',
+        image_url: {
+          url: imageBase64
+        }
+      });
+    });
+
+    const summary = await callAIService([
+      {
+        role: 'user',
+        content
+      }
+    ], 500);
+
+    console.log(`✅ AI analysis completed: ${summary.substring(0, 100)}...`);
+
+    res.json({
+      available: true,
+      summary: summary.trim()
+    });
+
+  } catch (error) {
+    console.error('AI analysis error:', error.message);
+    aiServiceAvailable = false;
+    res.json({
+      available: false,
+      summary: null,
+      error: error.message
+    });
+  }
+});
+
+app.post(`${BASE_PATH}/api/ai/generate-filename`, async (req, res) => {
+  try {
+    if (!aiServiceAvailable) {
+      return res.json({ 
+        available: false, 
+        filename: null,
+        error: 'AI service is not available' 
+      });
+    }
+
+    const { summary, images, pageCount } = req.body;
+    
+    if (!summary && (!images || images.length === 0)) {
+      return res.status(400).json({ error: 'Either summary or images are required' });
+    }
+
+    console.log(`📝 Generating filename ${summary ? 'from summary' : 'from images'}...`);
+    
+    let prompt;
+    let content;
+
+    if (summary) {
+      prompt = `Based on this document description, create a short filename in English for a PDF file.
+Format: "Name Surname document_type pages X-Y.pdf" or similar.
+Use only Latin letters, numbers, spaces, hyphens, and dots.
+Maximum 50 characters (including .pdf extension).
+Be concise and clear.
+
+Document description: "${summary}"
+Page count: ${pageCount || 'unknown'}
+
+Return ONLY the filename, no explanations.`;
+
+      content = prompt;
+    } else {
+      const imagesToAnalyze = images.slice(0, 5);
+      
+      content = [
+        {
+          type: 'text',
+          text: `Analyze these document images and create a short filename in English for a PDF file.
+Format: "Name Surname document_type pages X-Y.pdf" or similar.
+Use only Latin letters, numbers, spaces, hyphens, and dots.
+Maximum 50 characters (including .pdf extension).
+Be concise and clear.
+
+Page count: ${pageCount || images.length}
+
+Return ONLY the filename, no explanations.`
+        }
+      ];
+
+      imagesToAnalyze.forEach(imageBase64 => {
+        if (!imageBase64.startsWith('data:image')) {
+          imageBase64 = `data:image/jpeg;base64,${imageBase64}`;
+        }
+        content.push({
+          type: 'image_url',
+          image_url: {
+            url: imageBase64
+          }
+        });
+      });
+    }
+
+    const filename = await callAIService([
+      {
+        role: 'user',
+        content
+      }
+    ], 100);
+
+    let cleanFilename = filename.trim()
+      .replace(/^["']|["']$/g, '')
+      .replace(/[^\x00-\x7F]/g, '')
+      .replace(/[<>:"/\\|?*]/g, '')
+      .trim();
+
+    if (!cleanFilename.toLowerCase().endsWith('.pdf')) {
+      cleanFilename += '.pdf';
+    }
+
+    if (cleanFilename.length > 50) {
+      const nameWithoutExt = cleanFilename.slice(0, -4);
+      cleanFilename = nameWithoutExt.slice(0, 46) + '.pdf';
+    }
+
+    console.log(`✅ Generated filename: ${cleanFilename}`);
+
+    res.json({
+      available: true,
+      filename: cleanFilename
+    });
+
+  } catch (error) {
+    console.error('Filename generation error:', error.message);
+    aiServiceAvailable = false;
+    res.json({
+      available: false,
+      filename: null,
+      error: error.message
+    });
+  }
+});
+
 const frontendDistPath = join(process.cwd(), 'frontend/dist');
 const indexHtmlPath = join(frontendDistPath, 'index.html');
 
@@ -210,7 +443,8 @@ if (fs.existsSync(indexHtmlPath)) {
   console.log('🔧 Development mode: Frontend runs separately');
 }
 
-app.listen(PORT, () => {
+app.listen(PORT, async () => {
   console.log(`🚀 JPG2PDF server running on http://localhost:${PORT}${BASE_PATH}`);
   console.log(`📁 API endpoint: http://localhost:${PORT}${BASE_PATH}/api/generate-pdf`);
+  await checkAIServiceHealth();
 });

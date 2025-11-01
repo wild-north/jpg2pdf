@@ -1,6 +1,6 @@
 import { useState, useCallback, useRef, useEffect } from 'react'
 import { ReactSortable } from 'react-sortablejs'
-import { Upload, FileImage, Download, Trash2, Move, FileText, Expand, X, ChevronLeft, ChevronRight } from 'lucide-react'
+import { Upload, FileImage, Download, Trash2, Move, FileText, Expand, X, ChevronLeft, ChevronRight, Sparkles, Loader2 } from 'lucide-react'
 
 function App() {
   const [images, setImages] = useState([])
@@ -13,6 +13,12 @@ function App() {
   const [generatedFileSize, setGeneratedFileSize] = useState(null)
   const [enlargedImageIndex, setEnlargedImageIndex] = useState(null)
   const fileInputRef = useRef(null)
+  
+  const [aiAvailable, setAiAvailable] = useState(false)
+  const [isAnalyzing, setIsAnalyzing] = useState(false)
+  const [aiSummary, setAiSummary] = useState(null)
+  const [aiGeneratedFilename, setAiGeneratedFilename] = useState(null)
+  const [useAiFilename, setUseAiFilename] = useState(true)
 
   const naturalSort = (a, b) => {
     return a.name.localeCompare(b.name, undefined, {
@@ -103,6 +109,66 @@ function App() {
     setImages(prev => prev.filter(img => img.id !== id))
   }, [])
 
+  const analyzeWithAI = async () => {
+    if (!aiAvailable || images.length === 0) return
+
+    setIsAnalyzing(true)
+    setAiSummary(null)
+    setAiGeneratedFilename(null)
+
+    try {
+      const imagesToSend = images.slice(0, 5).map(img => img.preview)
+
+      const basePath = import.meta.env.BASE_URL.replace(/\/$/, '')
+      const response = await fetch(`${basePath}/api/ai/analyze`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ images: imagesToSend })
+      })
+
+      if (!response.ok) {
+        throw new Error('Failed to analyze images')
+      }
+
+      const data = await response.json()
+
+      if (data.available && data.summary) {
+        setAiSummary(data.summary)
+        
+        if (useAiFilename) {
+          const filenameResponse = await fetch(`${basePath}/api/ai/generate-filename`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ 
+              summary: data.summary,
+              pageCount: images.length
+            })
+          })
+
+          if (filenameResponse.ok) {
+            const filenameData = await filenameResponse.json()
+            if (filenameData.available && filenameData.filename) {
+              setAiGeneratedFilename(filenameData.filename)
+            }
+          }
+        }
+      } else {
+        setAiAvailable(false)
+        alert('AI service is currently unavailable. Please try again later.')
+      }
+
+    } catch (error) {
+      console.error('Error analyzing with AI:', error)
+      alert('Error analyzing images with AI. Please try again.')
+    } finally {
+      setIsAnalyzing(false)
+    }
+  }
+
   const generatePdf = async () => {
     if (images.length === 0) return
 
@@ -112,6 +178,34 @@ function App() {
     setGeneratedFileSize(null)
 
     try {
+      if (useAiFilename && aiAvailable && !aiGeneratedFilename) {
+        console.log('Generating AI filename before PDF generation...')
+        const basePath = import.meta.env.BASE_URL.replace(/\/$/, '')
+        
+        const body = aiSummary 
+          ? { summary: aiSummary, pageCount: images.length }
+          : { images: images.slice(0, 5).map(img => img.preview), pageCount: images.length }
+
+        try {
+          const filenameResponse = await fetch(`${basePath}/api/ai/generate-filename`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(body)
+          })
+
+          if (filenameResponse.ok) {
+            const filenameData = await filenameResponse.json()
+            if (filenameData.available && filenameData.filename) {
+              setAiGeneratedFilename(filenameData.filename)
+            }
+          }
+        } catch (error) {
+          console.error('Error generating filename:', error)
+        }
+      }
+
       const formData = new FormData()
       // Add images in the exact order they appear in the array
       images.forEach((image) => {
@@ -151,7 +245,7 @@ function App() {
 
       // Auto download if checkbox is checked
       if (autoDownload) {
-        const filename = generateBaseFilename(images)
+        const filename = (useAiFilename && aiGeneratedFilename) ? aiGeneratedFilename : generateBaseFilename(images)
         const a = document.createElement('a')
         a.href = url
         a.download = filename
@@ -170,7 +264,7 @@ function App() {
 
   const downloadPdf = () => {
     if (generatedPdfUrl) {
-      const filename = generateBaseFilename(images)
+      const filename = (useAiFilename && aiGeneratedFilename) ? aiGeneratedFilename : generateBaseFilename(images)
       const a = document.createElement('a')
       a.href = generatedPdfUrl
       a.download = filename
@@ -205,6 +299,28 @@ function App() {
 
   const handleThumbnailClick = useCallback((index) => {
     setEnlargedImageIndex(index)
+  }, [])
+
+  useEffect(() => {
+    const checkAIStatus = async () => {
+      try {
+        const basePath = import.meta.env.BASE_URL.replace(/\/$/, '')
+        const response = await fetch(`${basePath}/api/ai/status`)
+        if (response.ok) {
+          const data = await response.json()
+          setAiAvailable(data.available)
+          if (data.available) {
+            console.log('✅ AI service is available')
+          } else {
+            console.log('⚠️ AI service is not available')
+          }
+        }
+      } catch (error) {
+        console.error('Error checking AI status:', error)
+        setAiAvailable(false)
+      }
+    }
+    checkAIStatus()
   }, [])
 
   // Handle keyboard navigation
@@ -330,6 +446,71 @@ function App() {
                 </div>
               ))}
             </ReactSortable>
+          </div>
+        )}
+
+        {/* AI Analysis Section */}
+        {aiAvailable && images.length > 0 && (
+          <div className="bg-white rounded-lg shadow-lg p-6 mb-8">
+            <div className="text-center">
+              <h2 className="text-xl font-semibold text-gray-900 mb-4 flex items-center justify-center">
+                <Sparkles className="mr-2 h-5 w-5 text-purple-500" />
+                AI Analysis
+              </h2>
+              
+              <div className="mb-4">
+                <label className="flex items-center justify-center text-sm text-gray-600 mb-4">
+                  <input
+                    type="checkbox"
+                    checked={useAiFilename}
+                    onChange={(e) => setUseAiFilename(e.target.checked)}
+                    className="mr-2 h-4 w-4 text-purple-600 border-gray-300 rounded focus:ring-purple-500"
+                  />
+                  Generate AI-powered filename
+                </label>
+              </div>
+
+              {!isAnalyzing && !aiSummary && (
+                <button
+                  onClick={analyzeWithAI}
+                  className="bg-purple-500 hover:bg-purple-600 text-white px-6 py-3 rounded-lg font-medium transition-colors flex items-center mx-auto"
+                >
+                  <Sparkles className="mr-2 h-5 w-5" />
+                  Analyze with AI
+                </button>
+              )}
+
+              {isAnalyzing && (
+                <div className="flex items-center justify-center text-purple-600">
+                  <Loader2 className="mr-2 h-5 w-5 animate-spin" />
+                  <span>Analyzing images with AI...</span>
+                </div>
+              )}
+
+              {aiSummary && (
+                <div className="mt-4">
+                  <div className="bg-purple-50 border border-purple-200 rounded-lg p-4 mb-4">
+                    <h3 className="text-sm font-semibold text-purple-900 mb-2">Document Summary:</h3>
+                    <p className="text-gray-700 text-sm">{aiSummary}</p>
+                  </div>
+                  
+                  {aiGeneratedFilename && useAiFilename && (
+                    <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 mb-4">
+                      <h3 className="text-xs font-semibold text-blue-900 mb-1">Generated Filename:</h3>
+                      <p className="text-gray-700 text-sm font-mono">{aiGeneratedFilename}</p>
+                    </div>
+                  )}
+
+                  <button
+                    onClick={analyzeWithAI}
+                    className="bg-purple-500 hover:bg-purple-600 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors flex items-center mx-auto"
+                  >
+                    <Sparkles className="mr-2 h-4 w-4" />
+                    Re-analyze
+                  </button>
+                </div>
+              )}
+            </div>
           </div>
         )}
 

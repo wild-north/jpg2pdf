@@ -86,6 +86,32 @@ jpg2pdf/
 - **Informative messages**: Detailed logs of the conversion process
 - **Error handling**: Clear error messages
 
+## 🤖 AI Integration (LM Studio)
+
+The application includes optional AI-powered features using LM Studio with multimodal models (e.g., Gemma 3).
+
+### AI Features
+- **Document Analysis**: Analyzes uploaded images and generates a Ukrainian summary (up to 300 characters) describing the document type, owner, and content
+- **Smart Filename Generation**: Creates concise English filenames (max 50 characters) based on document analysis or direct image analysis
+
+### How It Works
+1. **With Analysis**: Click "Analyze with AI" to get a summary, then generate PDF with AI-powered filename
+2. **Filename Only**: Enable "Generate AI-powered filename" checkbox and generate PDF directly - the filename will be created automatically
+3. **Graceful Fallback**: If AI service is unavailable, all AI features are hidden and the app works normally with standard features
+
+### Configuration
+Set the LM Studio URL in `docker-compose.yml`:
+```yaml
+environment:
+  - LM_STUDIO_URL=http://192.168.88.24:1234
+```
+
+### Technical Details
+- All prompts are in English for optimal token usage
+- Only first 5 images are analyzed to reduce processing time
+- Automatic healthcheck on startup
+- No impact on core functionality if AI is unavailable
+
 ## 🔧 Additional Commands
 
 ### Development mode (with auto-restart)

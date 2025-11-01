@@ -12,6 +12,7 @@ services:
       - PORT=3000
       - NODE_ENV=production
       - BASE_PATH=/jpg2pdf
+      - LM_STUDIO_URL=http://192.168.88.24:1234
     volumes:
       - ./output:/app/output
     healthcheck:
