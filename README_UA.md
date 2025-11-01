@@ -1,5 +1,7 @@
 # JPG to PDF Converter
 
+![Deploy Status](https://github.com/wild-north/jpg2pdf/actions/workflows/deploy.yml/badge.svg)
+
 Простий і швидкий Node.js додаток для конвертації JPG зображень у PDF файл з веб-інтерфейсом.
 
 ## 📋 Опис

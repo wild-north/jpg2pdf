@@ -63,7 +63,20 @@ jobs:
             
             echo ""
             echo "Pulling latest code from repository..."
-            git pull
+            OUTPUT=$(git pull)
+            echo "$OUTPUT"
+            
+            if echo "$OUTPUT" | grep -q "Already up to date"; then
+              echo ""
+              echo "⏭️ No new commits, skipping deployment"
+              echo "## ⏭️ Deployment Skipped" >> $GITHUB_STEP_SUMMARY
+              echo "" >> $GITHUB_STEP_SUMMARY
+              echo "No new commits to deploy." >> $GITHUB_STEP_SUMMARY
+              echo "" >> $GITHUB_STEP_SUMMARY
+              echo "- 📦 **Current commit**: \`$(git rev-parse --short HEAD)\`" >> $GITHUB_STEP_SUMMARY
+              echo "- ⏱️ **Checked at**: $(date '+%Y-%m-%d %H:%M:%S UTC')" >> $GITHUB_STEP_SUMMARY
+              exit 0
+            fi
             
             echo ""
             echo "Stopping current containers..."
@@ -93,6 +106,17 @@ jobs:
                 echo "✗ Health check failed after $MAX_ATTEMPTS attempts"
                 echo "Container logs:"
                 docker compose logs --tail=50
+                
+                echo "## ❌ Deployment Failed" >> $GITHUB_STEP_SUMMARY
+                echo "" >> $GITHUB_STEP_SUMMARY
+                echo "Health check failed after $MAX_ATTEMPTS attempts." >> $GITHUB_STEP_SUMMARY
+                echo "" >> $GITHUB_STEP_SUMMARY
+                echo "- 📦 **Commit**: \`$(git rev-parse --short HEAD)\`" >> $GITHUB_STEP_SUMMARY
+                echo "- ⏱️ **Failed at**: $(date '+%Y-%m-%d %H:%M:%S UTC')" >> $GITHUB_STEP_SUMMARY
+                echo "- 🐳 **Backup available**: \`${BACKUP_TAG}\`" >> $GITHUB_STEP_SUMMARY
+                echo "" >> $GITHUB_STEP_SUMMARY
+                echo "Check the logs above for details." >> $GITHUB_STEP_SUMMARY
+                
                 exit 1
               fi
               
@@ -110,3 +134,16 @@ jobs:
             echo ""
             echo "Available backups:"
             docker images | grep "jpg2pdf" || echo "No images found"
+            
+            echo ""
+            echo "Creating deployment summary..."
+            echo "## ✅ Deployment Successful" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "- 📦 **Commit**: \`$(git rev-parse --short HEAD)\` - $(git log -1 --pretty=%B | head -n 1)" >> $GITHUB_STEP_SUMMARY
+            echo "- ⏱️ **Completed**: $(date '+%Y-%m-%d %H:%M:%S UTC')" >> $GITHUB_STEP_SUMMARY
+            echo "- 🐳 **Backup Created**: \`${BACKUP_TAG}\`" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "### 📊 Container Status" >> $GITHUB_STEP_SUMMARY
+            echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+            docker compose ps >> $GITHUB_STEP_SUMMARY
+            echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
