@@ -1,4 +1,5 @@
 # JPG2PDF Docker Compose Configuration
+# Production deployment setup
 services:
   jpg2pdf:
     build:
