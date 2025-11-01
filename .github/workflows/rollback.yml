@@ -1,0 +1,180 @@
+name: Rollback to Previous Backup
+
+on:
+  workflow_dispatch:
+    inputs:
+      backup_tag:
+        description: 'Backup tag to rollback to (e.g., backup_20251101_143022). Leave empty to only list available backups.'
+        required: false
+        type: string
+
+jobs:
+  rollback:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: List Available Backups
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          port: ${{ secrets.SSH_PORT }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          script: |
+            set -e
+            
+            echo "=========================================="
+            echo "Available Docker Images for jpg2pdf"
+            echo "=========================================="
+            echo ""
+            
+            cd ~/apps/jpg2pdf
+            
+            docker images --format "table {{.Repository}}\t{{.Tag}}\t{{.CreatedAt}}\t{{.Size}}" | grep -E "REPOSITORY|jpg2pdf" || echo "No jpg2pdf images found"
+            
+            echo ""
+            echo "=========================================="
+            
+            if [ -z "${{ github.event.inputs.backup_tag }}" ]; then
+              echo "ℹ️  No backup tag provided - showing available backups only"
+              echo "To rollback, run this workflow again with a backup_tag parameter"
+            else
+              echo "🔄 Will proceed with rollback to: ${{ github.event.inputs.backup_tag }}"
+            fi
+
+      - name: Verify Backup Exists
+        if: ${{ github.event.inputs.backup_tag != '' }}
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          port: ${{ secrets.SSH_PORT }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          script: |
+            set -e
+            
+            echo "Verifying that backup tag exists: ${{ github.event.inputs.backup_tag }}"
+            
+            cd ~/apps/jpg2pdf
+            
+            if docker images --format "{{.Repository}}:{{.Tag}}" | grep -q "^jpg2pdf:${{ github.event.inputs.backup_tag }}$"; then
+              echo "✓ Backup tag found!"
+            else
+              echo "✗ Error: Backup tag '${{ github.event.inputs.backup_tag }}' not found"
+              echo ""
+              echo "Available backups:"
+              docker images --format "{{.Repository}}:{{.Tag}}" | grep "^jpg2pdf:"
+              exit 1
+            fi
+
+      - name: Rollback to Backup
+        if: ${{ github.event.inputs.backup_tag != '' }}
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          port: ${{ secrets.SSH_PORT }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          script: |
+            set -e
+            
+            echo "=========================================="
+            echo "Starting rollback process"
+            echo "=========================================="
+            
+            cd ~/apps/jpg2pdf
+            
+            echo ""
+            echo "Creating safety backup of current state..."
+            SAFETY_BACKUP_TAG="jpg2pdf:rollback_safety_$(date +%Y%m%d_%H%M%S)"
+            
+            if docker images | grep -q "^jpg2pdf.*latest"; then
+              docker tag jpg2pdf:latest ${SAFETY_BACKUP_TAG}
+              echo "✓ Safety backup created: ${SAFETY_BACKUP_TAG}"
+            else
+              echo "ℹ️  No current image to backup"
+            fi
+            
+            echo ""
+            echo "Stopping current containers..."
+            docker compose down
+            
+            echo ""
+            echo "Rolling back to: jpg2pdf:${{ github.event.inputs.backup_tag }}"
+            docker tag jpg2pdf:${{ github.event.inputs.backup_tag }} jpg2pdf:latest
+            
+            echo ""
+            echo "Starting containers with rolled back image..."
+            docker compose up -d
+            
+            echo ""
+            echo "✓ Rollback completed!"
+
+      - name: Health Check
+        if: ${{ github.event.inputs.backup_tag != '' }}
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          port: ${{ secrets.SSH_PORT }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          script: |
+            set -e
+            
+            echo "=========================================="
+            echo "Checking application health"
+            echo "=========================================="
+            
+            cd ~/apps/jpg2pdf
+            
+            HEALTHCHECK_URL="http://localhost:3000/jpg2pdf/api/health"
+            MAX_ATTEMPTS=30
+            ATTEMPT=0
+            
+            while [ $ATTEMPT -lt $MAX_ATTEMPTS ]; do
+              ATTEMPT=$((ATTEMPT + 1))
+              echo "Health check attempt $ATTEMPT/$MAX_ATTEMPTS..."
+              
+              if wget --spider --quiet --tries=1 --timeout=2 "$HEALTHCHECK_URL" 2>/dev/null; then
+                echo "✓ Application is healthy after rollback!"
+                break
+              fi
+              
+              if [ $ATTEMPT -eq $MAX_ATTEMPTS ]; then
+                echo "✗ Health check failed after $MAX_ATTEMPTS attempts"
+                echo ""
+                echo "Container logs:"
+                docker compose logs --tail=50
+                echo ""
+                echo "⚠️  Rollback may have failed. Check logs above."
+                exit 1
+              fi
+              
+              sleep 2
+            done
+
+      - name: Show Container Status
+        if: always()
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          port: ${{ secrets.SSH_PORT }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          script: |
+            set -e
+            
+            cd ~/apps/jpg2pdf
+            
+            echo ""
+            echo "=========================================="
+            echo "Current Container Status"
+            echo "=========================================="
+            docker compose ps
+            
+            echo ""
+            echo "=========================================="
+            echo "Current Docker Images"
+            echo "=========================================="
+            docker images | grep "jpg2pdf" || echo "No jpg2pdf images found"
+
