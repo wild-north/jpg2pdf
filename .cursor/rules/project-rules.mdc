@@ -1,0 +1,249 @@
+# JPG2PDF Project Rules
+
+## Project Overview
+**jpg2pdf** - Web application for converting images to PDF with AI-powered image analysis.
+
+### Tech Stack
+- **Backend**: Node.js + Express.js
+- **Frontend**: React + Vite
+- **AI**: Local LM Studio (self-hosted language model)
+- **Deployment**: Docker Compose + GitHub Actions
+- **Hosting**: Private server "North Lab"
+
+---
+
+## Project Structure
+
+```
+jpg2pdf/
+├── backend/
+│   └── server.js          # Express server, API endpoints, AI integration
+├── frontend/
+│   ├── src/
+│   │   └── App.jsx        # Main React component
+│   └── vite.config.js     # Vite config with backend proxy
+├── .github/
+│   └── workflows/
+│       └── deploy.yml     # GitHub Actions deployment workflow
+├── .env                   # Environment variables (NOT in git)
+├── .env.example           # Template for environment variables
+├── docker-compose.yml     # Docker container configuration
+├── package.json           # Root package.json with dev scripts
+└── README.md
+```
+
+---
+
+## Environment Variables
+
+### Location
+- **Local development**: `.env` in project root
+- **Production**: Created dynamically on server from GitHub Secrets
+
+### Required Variables
+```bash
+PORT=3000                                    # Backend server port
+NODE_ENV=production                          # Environment (development/production)
+LM_STUDIO_URL=http://192.168.88.24:1234    # Local AI service URL
+```
+
+### Important Notes
+- `.env` file is read by both backend and Vite (via `vite.config.js`)
+- Vite config reads from parent directory: `loadEnv(mode, '../', '')`
+- GitHub Actions creates `.env` on server from secrets (LM_STUDIO_URL, PORT)
+
+---
+
+## Backend Details (`backend/server.js`)
+
+### Key Features
+- **Express middleware limits**: `50mb` for JSON and URL-encoded data (increased from 10mb for large images)
+- **CORS**: Enabled for frontend communication
+- **File upload**: Multer for multipart/form-data
+- **PDF generation**: pdf-lib + sharp for image processing
+- **AI integration**: Axios requests to LM Studio
+
+### API Endpoints
+- `POST /api/convert` - Convert images to PDF
+- `POST /api/ai/analyze` - AI image analysis (English descriptions)
+- `GET /api/ai/status` - Check AI service health
+
+### Error Handling
+- **PayloadTooLargeError**: Returns `PAYLOAD_TOO_LARGE` error code
+- Frontend shows user-friendly message: "You've attached files that are too large for AI to process"
+
+### AI Prompts
+- Language: **English only** (changed from Ukrainian)
+- Model: Local LM Studio instance
+
+---
+
+## Frontend Details
+
+### Vite Configuration (`frontend/vite.config.js`)
+- **Backend proxy**: `/api` routes proxied to `http://localhost:${backendPort}`
+- **Environment loading**: Reads `.env` from parent directory
+- **Default backend port**: 3000
+
+### Main Component (`frontend/src/App.jsx`)
+- Image upload with drag & drop
+- PDF generation
+- AI analysis integration
+- Error handling for `PAYLOAD_TOO_LARGE`
+
+### Development
+```bash
+npm run dev              # Run both backend and frontend concurrently
+npm run dev:backend      # Backend only (port 3000)
+npm run dev:frontend     # Frontend only (port 5173)
+```
+
+---
+
+## Docker & Deployment
+
+### Docker Compose
+- **Production setup**: Manages backend and frontend containers
+- **Environment**: Uses `.env` file created from GitHub Secrets
+
+### GitHub Actions Deployment (`.github/workflows/deploy.yml`)
+
+#### Trigger
+- **Manual only**: `workflow_dispatch` (no auto-deploy on push)
+
+#### Permissions
+```yaml
+permissions:
+  contents: read        # For checkout
+  deployments: write    # For GitHub Deployments API
+```
+
+#### Deployment Flow
+1. **Checkout** repository
+2. **SSH Deploy** via `appleboy/ssh-action`:
+   - Backup existing Docker images (keep last 3)
+   - Check disk space
+   - Git pull with `--ff-only`
+   - Create `.env` from GitHub Secrets (LM_STUDIO_URL, PORT)
+   - Docker Compose rebuild
+   - Health check (30 attempts, 10s interval)
+   - Log to `deploy.log`
+3. **Track Deployments** via GitHub Deployments API:
+   - `actions/github-script` to call `github.rest.repos.listDeployments()`
+   - Get previous deployment SHA
+   - Compare commits using `/compare/{old}...{new}` API
+4. **Create Summary**:
+   - Show deployed commits with clickable links
+   - Format: `[hash](url) **message** _by author_`
+
+#### GitHub Secrets Required
+- `SSH_HOST` - Server IP/hostname
+- `SSH_PORT` - SSH port
+- `SSH_USER` - SSH username
+- `SSH_PRIVATE_KEY` - SSH private key
+- `LM_STUDIO_URL` - AI service URL
+- `PORT` - Backend port (optional, defaults to 3000)
+
+#### Key Features
+- **Deployment tracking**: Uses GitHub Deployments API (environment: production)
+- **Commit display**: Shows only commits deployed in current run (not all recent)
+- **Error handling**: Timeout (15 min), disk space check, uncommitted changes warning
+- **Backup**: Keeps last 3 Docker image backups, cleans up old ones
+- **Health check**: Retries 30 times before failing
+- **Logging**: All deployments logged to `~/apps/jpg2pdf/deploy.log` on server
+
+#### Common Issues & Fixes
+1. **Commit message parsing errors**: Use temporary file for jq parsing, escape special characters
+2. **SSH output not accessible**: Don't rely on `steps.deploy.outputs.stdout` - use GitHub API instead
+3. **403 Deployments API**: Requires `deployments: write` permission
+4. **YAML heredoc issues**: Use `echo` commands instead for `.env` creation
+
+---
+
+## Development Workflow
+
+### Starting the Project
+```bash
+npm install              # Install dependencies
+npm run dev             # Start both backend and frontend
+```
+
+### Common Tasks
+- **Check backend port**: `lsof -i :3000`
+- **Kill port process**: `kill -9 <PID>`
+- **Check AI status**: `curl http://192.168.88.24:1234/v1/models`
+- **Manual deploy**: GitHub Actions → Run workflow
+
+### Git Workflow
+- **Manual deployment**: Only via GitHub Actions UI
+- **Commit style**: Descriptive, imperative mood
+- **Testing**: Create test commits with `--allow-empty` if needed
+
+---
+
+## Best Practices & Preferences
+
+### Code Style
+- **Language**: Code in English, comments can be Ukrainian if needed
+- **Error messages**: User-facing errors in English
+- **Console logs**: English for consistency
+
+### Deployment
+- **Never auto-deploy**: Deployment is manual only (no push triggers)
+- **Test locally first**: Always test changes with `npm run dev` before deploying
+- **Verify secrets**: Check GitHub Secrets are set before deployment
+
+### GitHub Actions
+- **Use official actions**: Prefer `actions/*` and well-maintained actions (Trust Score > 7)
+- **Handle errors gracefully**: Always add fallbacks and error messages
+- **Timeout everything**: Add timeouts to prevent hanging workflows
+- **Log verbosely**: Help debugging with detailed logs
+
+### Working with AI (Cursor)
+- **Ask before adding features**: Don't add triggers, auto-deployments, or major changes without permission
+- **Fix immediately when asked**: If user complains, fix it right away
+- **Use official docs**: Verify solutions with Context7 MCP and official documentation
+- **Test assumptions**: Use `grep`, `read_file`, and `codebase_search` to verify before making changes
+
+---
+
+## Known Issues & Solutions
+
+### Issue: `PayloadTooLargeError` with large images
+**Solution**: Increased Express limits to 50mb in backend/server.js
+
+### Issue: Vite can't connect to backend
+**Solution**: Vite reads `.env` from parent directory, default port is 3000
+
+### Issue: GitHub Actions deployment summary shows wrong commits
+**Solution**: Use GitHub Deployments API to track actual deployed commits
+
+### Issue: `EADDRINUSE` port 3000 already in use
+**Solution**: Find and kill process: `lsof -i :3000` then `kill -9 <PID>`
+
+### Issue: AI returns Ukrainian descriptions
+**Solution**: Changed prompts in backend to explicitly request English
+
+---
+
+## Contact & Metadata
+
+- **Author**: Serhii Stryzhak
+- **Version**: 1.1.0
+- **Repository**: github.com:wild-north/jpg2pdf.git
+- **Server**: North Lab (private)
+
+---
+
+## Future Considerations
+
+- Consider adding automated tests before deployment
+- Monitor Docker image sizes and cleanup strategy
+- Consider rate limiting for AI endpoints
+- Add metrics/monitoring for production deployments
+- Consider adding rollback functionality in GitHub Actions
+
+---
+
+Last updated: 2025-11-01
+
