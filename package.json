@@ -1,7 +1,7 @@
 {
   "name": "jpg2pdf",
   "version": "1.1.0",
-  "description": "Convert JPG images to PDF with web interface",
+  "description": "Convert JPG images to PDF with modern web interface",
   "main": "backend/server.js",
   "type": "module",
   "scripts": {
