@@ -180,28 +180,41 @@ jobs:
       - name: Get Deployed Commits
         if: steps.deploy.outcome == 'success' && !contains(steps.deploy.outputs.stdout, 'DEPLOYMENT_SKIPPED')
         id: commits
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          port: ${{ secrets.SSH_PORT }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          script: |
+            cd ~/apps/jpg2pdf
+            
+            if [ -f deploy.log ]; then
+              echo "Reading last deployment from deploy.log..."
+              LAST_LINE=$(tail -n 1 deploy.log)
+              OLD_COMMIT=$(echo "$LAST_LINE" | grep -oE '[a-f0-9]{40}' | head -1)
+            else
+              echo "No deploy.log found, getting previous commit..."
+              OLD_COMMIT=$(git rev-parse HEAD~1 2>/dev/null || git rev-parse HEAD)
+            fi
+            
+            NEW_COMMIT=$(git rev-parse HEAD)
+            
+            echo "COMMITS_OLD=$OLD_COMMIT"
+            echo "COMMITS_NEW=$NEW_COMMIT"
+      
+      - name: Parse Commits and Call GitHub API
+        if: steps.commits.outcome == 'success'
+        id: parse_commits
         run: |
-          DEPLOY_OUTPUT="${{ steps.deploy.outputs.stdout }}"
+          COMMITS_OUTPUT="${{ steps.commits.outputs.stdout }}"
           
-          echo "=== Searching for commit markers in deploy output ==="
-          echo "Deploy output length: ${#DEPLOY_OUTPUT} characters"
-          
-          OLD_COMMIT=$(echo "$DEPLOY_OUTPUT" | grep "DEPLOY_OLD_COMMIT=" | sed 's/.*DEPLOY_OLD_COMMIT=//;s/[^a-f0-9].*//' | head -1)
-          NEW_COMMIT=$(echo "$DEPLOY_OUTPUT" | grep "DEPLOY_NEW_COMMIT=" | sed 's/.*DEPLOY_NEW_COMMIT=//;s/[^a-f0-9].*//' | head -1)
+          echo "=== Parsing commit hashes from SSH output ==="
+          OLD_COMMIT=$(echo "$COMMITS_OUTPUT" | grep "COMMITS_OLD=" | sed 's/.*COMMITS_OLD=//' | tr -d '\r\n ')
+          NEW_COMMIT=$(echo "$COMMITS_OUTPUT" | grep "COMMITS_NEW=" | sed 's/.*COMMITS_NEW=//' | tr -d '\r\n ')
           
           echo "Old commit: [$OLD_COMMIT] (length: ${#OLD_COMMIT})"
           echo "New commit: [$NEW_COMMIT] (length: ${#NEW_COMMIT})"
-          
-          if [ -z "$OLD_COMMIT" ]; then
-            echo "⚠️ Warning: Could not find OLD_COMMIT marker"
-            echo "Searching for pattern in output..."
-            echo "$DEPLOY_OUTPUT" | grep -A2 -B2 "DEPLOY_OLD" || echo "Pattern not found"
-          fi
-          if [ -z "$NEW_COMMIT" ]; then
-            echo "⚠️ Warning: Could not find NEW_COMMIT marker"
-            echo "Searching for pattern in output..."
-            echo "$DEPLOY_OUTPUT" | grep -A2 -B2 "DEPLOY_NEW" || echo "Pattern not found"
-          fi
           
           if [ -z "$OLD_COMMIT" ] || [ -z "$NEW_COMMIT" ] || [ "$OLD_COMMIT" = "$NEW_COMMIT" ]; then
             echo "❌ Cannot proceed: missing or identical commits"
@@ -261,7 +274,7 @@ jobs:
               echo "### 📝 Deployed Commits" >> $GITHUB_STEP_SUMMARY
               echo "" >> $GITHUB_STEP_SUMMARY
               
-              COMMITS_LIST="${{ steps.commits.outputs.commits_list }}"
+              COMMITS_LIST="${{ steps.parse_commits.outputs.commits_list }}"
               if [ -n "$COMMITS_LIST" ]; then
                 echo "$COMMITS_LIST" | tr '|' '\n' >> $GITHUB_STEP_SUMMARY
               else
