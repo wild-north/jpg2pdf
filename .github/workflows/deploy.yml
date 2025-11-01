@@ -74,6 +74,11 @@ jobs:
             fi
             
             echo ""
+            echo "Saving current commit hash..."
+            OLD_COMMIT=$(git rev-parse HEAD)
+            echo "Current commit: $OLD_COMMIT"
+            
+            echo ""
             echo "Pulling latest code from repository..."
             OUTPUT=$(git pull)
             echo "$OUTPUT"
@@ -83,6 +88,12 @@ jobs:
               echo "⏭️ DEPLOYMENT_SKIPPED: No new commits"
               exit 0
             fi
+            
+            echo ""
+            echo "📝 DEPLOYED_COMMITS_START"
+            git log --pretty=format:"%h|%s|%an" $OLD_COMMIT..HEAD
+            echo ""
+            echo "📝 DEPLOYED_COMMITS_END"
             
             echo ""
             echo "Stopping current containers..."
@@ -144,11 +155,27 @@ jobs:
             else
               echo "## ✅ Deployment Successful" >> $GITHUB_STEP_SUMMARY
               echo "" >> $GITHUB_STEP_SUMMARY
-              echo "- 📦 **Commit**: \`${{ github.sha }}\`" >> $GITHUB_STEP_SUMMARY
+              echo "- 📦 **Latest Commit**: \`${{ github.sha }}\`" >> $GITHUB_STEP_SUMMARY
               echo "- ⏱️ **Completed**: $(date -u '+%Y-%m-%d %H:%M:%S UTC')" >> $GITHUB_STEP_SUMMARY
               echo "- 🐳 **Backup Created**: Check deployment logs for backup tag" >> $GITHUB_STEP_SUMMARY
               echo "" >> $GITHUB_STEP_SUMMARY
               echo "✓ Health check passed successfully" >> $GITHUB_STEP_SUMMARY
+              echo "" >> $GITHUB_STEP_SUMMARY
+              echo "### 📝 Deployed Commits" >> $GITHUB_STEP_SUMMARY
+              echo "" >> $GITHUB_STEP_SUMMARY
+              
+              DEPLOY_OUTPUT="${{ steps.deploy.outputs.stdout }}"
+              if echo "$DEPLOY_OUTPUT" | grep -q "📝 DEPLOYED_COMMITS_START"; then
+                echo "$DEPLOY_OUTPUT" | sed -n '/📝 DEPLOYED_COMMITS_START/,/📝 DEPLOYED_COMMITS_END/p' | \
+                  grep -v "DEPLOYED_COMMITS" | \
+                  while IFS='|' read -r hash message author; do
+                    if [ ! -z "$hash" ]; then
+                      echo "- \`$hash\` **$message** _by $author_" >> $GITHUB_STEP_SUMMARY
+                    fi
+                  done
+              else
+                echo "_No commit information available_" >> $GITHUB_STEP_SUMMARY
+              fi
             fi
           elif [[ "${{ steps.deploy.outcome }}" == "failure" ]]; then
             echo "## ❌ Deployment Failed" >> $GITHUB_STEP_SUMMARY
