@@ -33,12 +33,10 @@ jobs:
             cd ~/apps/jpg2pdf
             
             echo ""
-            echo "Creating .env file from GitHub variables..."
-            cat > .env << EOF
-PORT=${PORT}
-NODE_ENV=production
-LM_STUDIO_URL=${LM_STUDIO_URL}
-EOF
+            echo "Creating .env file from GitHub secrets..."
+            echo "PORT=${PORT}" > .env
+            echo "NODE_ENV=production" >> .env
+            echo "LM_STUDIO_URL=${LM_STUDIO_URL}" >> .env
             echo "✓ .env file created successfully"
             
             echo "Current directory: $(pwd)"
