@@ -1,4 +1,4 @@
-# JPG to PDF Converter
+# JPG to PDF Converter 📄
 
 ![Deploy Status](https://github.com/wild-north/jpg2pdf/actions/workflows/deploy.yml/badge.svg)
 
