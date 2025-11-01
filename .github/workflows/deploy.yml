@@ -76,6 +76,7 @@ jobs:
             echo ""
             echo "Saving current commit hash..."
             OLD_COMMIT=$(git rev-parse HEAD)
+            echo "OLD_COMMIT=$OLD_COMMIT" >> $GITHUB_OUTPUT
             echo "Current commit: $OLD_COMMIT"
             
             echo ""
@@ -90,10 +91,9 @@ jobs:
             fi
             
             echo ""
-            echo "📝 DEPLOYED_COMMITS_START"
-            git log --pretty=format:"%h|%s|%an" $OLD_COMMIT..HEAD
-            echo ""
-            echo "📝 DEPLOYED_COMMITS_END"
+            NEW_COMMIT=$(git rev-parse HEAD)
+            echo "NEW_COMMIT=$NEW_COMMIT" >> $GITHUB_OUTPUT
+            echo "New commit: $NEW_COMMIT"
             
             echo ""
             echo "Stopping current containers..."
@@ -142,6 +142,25 @@ jobs:
             docker images | grep "jpg2pdf" || echo "No images found"
             
 
+      - name: Get Deployed Commits
+        if: steps.deploy.outcome == 'success' && steps.deploy.outputs.OLD_COMMIT != ''
+        id: commits
+        run: |
+          OLD_COMMIT="${{ steps.deploy.outputs.OLD_COMMIT }}"
+          NEW_COMMIT="${{ steps.deploy.outputs.NEW_COMMIT }}"
+          
+          if [ -z "$OLD_COMMIT" ] || [ -z "$NEW_COMMIT" ]; then
+            echo "commits_list=" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+          
+          COMMITS=$(curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+            "https://api.github.com/repos/${{ github.repository }}/compare/${OLD_COMMIT}...${NEW_COMMIT}" | \
+            jq -r '.commits[] | "- `\(.sha[0:7])` **\(.commit.message | split("\n")[0])** _by \(.commit.author.name)_"' | \
+            tr '\n' '|')
+          
+          echo "commits_list=$COMMITS" >> $GITHUB_OUTPUT
+
       - name: Create Deployment Summary
         if: always()
         run: |
@@ -164,15 +183,9 @@ jobs:
               echo "### 📝 Deployed Commits" >> $GITHUB_STEP_SUMMARY
               echo "" >> $GITHUB_STEP_SUMMARY
               
-              DEPLOY_OUTPUT="${{ steps.deploy.outputs.stdout }}"
-              if echo "$DEPLOY_OUTPUT" | grep -q "📝 DEPLOYED_COMMITS_START"; then
-                echo "$DEPLOY_OUTPUT" | sed -n '/📝 DEPLOYED_COMMITS_START/,/📝 DEPLOYED_COMMITS_END/p' | \
-                  grep -v "DEPLOYED_COMMITS" | \
-                  while IFS='|' read -r hash message author; do
-                    if [ ! -z "$hash" ]; then
-                      echo "- \`$hash\` **$message** _by $author_" >> $GITHUB_STEP_SUMMARY
-                    fi
-                  done
+              COMMITS_LIST="${{ steps.commits.outputs.commits_list }}"
+              if [ -n "$COMMITS_LIST" ]; then
+                echo "$COMMITS_LIST" | tr '|' '\n' >> $GITHUB_STEP_SUMMARY
               else
                 echo "_No commit information available_" >> $GITHUB_STEP_SUMMARY
               fi
