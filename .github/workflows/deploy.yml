@@ -177,80 +177,26 @@ jobs:
             echo "✓ jq is already installed"
           fi
 
-      - name: Get Deployed Commits
+      - name: Get Recent Commits
         if: steps.deploy.outcome == 'success' && !contains(steps.deploy.outputs.stdout, 'DEPLOYMENT_SKIPPED')
         id: commits
-        uses: appleboy/ssh-action@v1.0.3
-        with:
-          host: ${{ secrets.SSH_HOST }}
-          port: ${{ secrets.SSH_PORT }}
-          username: ${{ secrets.SSH_USER }}
-          key: ${{ secrets.SSH_PRIVATE_KEY }}
-          script: |
-            cd ~/apps/jpg2pdf
-            
-            if [ -f deploy.log ]; then
-              echo "Reading last deployment from deploy.log..."
-              LAST_LINE=$(tail -n 1 deploy.log)
-              OLD_COMMIT=$(echo "$LAST_LINE" | grep -oE '[a-f0-9]{40}' | head -1)
-            else
-              echo "No deploy.log found, getting previous commit..."
-              OLD_COMMIT=$(git rev-parse HEAD~1 2>/dev/null || git rev-parse HEAD)
-            fi
-            
-            NEW_COMMIT=$(git rev-parse HEAD)
-            
-            echo "COMMITS_OLD=$OLD_COMMIT"
-            echo "COMMITS_NEW=$NEW_COMMIT"
-      
-      - name: Parse Commits and Call GitHub API
-        if: steps.commits.outcome == 'success'
-        id: parse_commits
         run: |
-          COMMITS_OUTPUT="${{ steps.commits.outputs.stdout }}"
+          echo "Fetching last 10 commits from GitHub API..."
           
-          echo "=== Parsing commit hashes from SSH output ==="
-          OLD_COMMIT=$(echo "$COMMITS_OUTPUT" | grep "COMMITS_OLD=" | sed 's/.*COMMITS_OLD=//' | tr -d '\r\n ')
-          NEW_COMMIT=$(echo "$COMMITS_OUTPUT" | grep "COMMITS_NEW=" | sed 's/.*COMMITS_NEW=//' | tr -d '\r\n ')
-          
-          echo "Old commit: [$OLD_COMMIT] (length: ${#OLD_COMMIT})"
-          echo "New commit: [$NEW_COMMIT] (length: ${#NEW_COMMIT})"
-          
-          if [ -z "$OLD_COMMIT" ] || [ -z "$NEW_COMMIT" ] || [ "$OLD_COMMIT" = "$NEW_COMMIT" ]; then
-            echo "❌ Cannot proceed: missing or identical commits"
-            echo "commits_list=" >> $GITHUB_OUTPUT
-            exit 0
-          fi
-          
-          echo "Fetching commits from GitHub API..."
-          API_URL="https://api.github.com/repos/${{ github.repository }}/compare/${OLD_COMMIT}...${NEW_COMMIT}"
-          echo "API URL: $API_URL"
-          
-          API_RESPONSE=$(curl -s -w "\n%{http_code}" -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" "$API_URL")
-          
-          HTTP_CODE=$(echo "$API_RESPONSE" | tail -n1)
-          RESPONSE_BODY=$(echo "$API_RESPONSE" | sed '$d')
-          
-          echo "HTTP Status Code: $HTTP_CODE"
-          
-          if [ "$HTTP_CODE" != "200" ]; then
-            echo "⚠️ Warning: GitHub API returned status $HTTP_CODE"
-            echo "Response preview: $(echo "$RESPONSE_BODY" | head -c 200)"
-            echo "commits_list=" >> $GITHUB_OUTPUT
-            exit 0
-          fi
-          
-          COMMITS=$(echo "$RESPONSE_BODY" | \
-            jq -r '.commits[]? | "- `\(.sha[0:7])` **\(.commit.message | split("\n")[0])** _by \(.commit.author.name)_"' | \
+          COMMITS=$(curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+            "https://api.github.com/repos/${{ github.repository }}/commits?sha=main&per_page=10" | \
+            jq -r '.[] | "- `\(.sha[0:7])` **\(.commit.message | split("\n")[0])** _by \(.commit.author.name)_"' | \
+            head -5 | \
             tr '\n' '|')
           
           if [ -z "$COMMITS" ]; then
-            echo "⚠️ Warning: No commits found in API response"
+            echo "⚠️ Warning: No commits found"
+            echo "commits_list=" >> $GITHUB_OUTPUT
           else
-            echo "✓ Found $(echo "$COMMITS" | tr '|' '\n' | wc -l) commits"
+            COMMIT_COUNT=$(echo "$COMMITS" | tr '|' '\n' | grep -c "^-" || echo "0")
+            echo "✓ Found $COMMIT_COUNT commits"
+            echo "commits_list=$COMMITS" >> $GITHUB_OUTPUT
           fi
-          
-          echo "commits_list=$COMMITS" >> $GITHUB_OUTPUT
 
       - name: Create Deployment Summary
         if: always()
@@ -271,10 +217,10 @@ jobs:
               echo "" >> $GITHUB_STEP_SUMMARY
               echo "✓ Health check passed successfully" >> $GITHUB_STEP_SUMMARY
               echo "" >> $GITHUB_STEP_SUMMARY
-              echo "### 📝 Deployed Commits" >> $GITHUB_STEP_SUMMARY
+              echo "### 📝 Recent Commits" >> $GITHUB_STEP_SUMMARY
               echo "" >> $GITHUB_STEP_SUMMARY
               
-              COMMITS_LIST="${{ steps.parse_commits.outputs.commits_list }}"
+              COMMITS_LIST="${{ steps.commits.outputs.commits_list }}"
               if [ -n "$COMMITS_LIST" ]; then
                 echo "$COMMITS_LIST" | tr '|' '\n' >> $GITHUB_STEP_SUMMARY
               else
