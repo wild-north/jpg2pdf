@@ -4,7 +4,9 @@
 
 Simple and fast Node.js application for converting JPG images to PDF with beautiful web interface.
 
-## 📋 Description
+## 📋 Description 
+
+Convert your JPG images to PDF quickly and easily!
 
 This application provides two ways to work:
 1. **Web Interface** - convenient drag-n-drop interface with ability to reorder pages
