@@ -13,6 +13,7 @@ jobs:
 
       - name: Deploy via SSH
         id: deploy
+        timeout-minutes: 15
         uses: appleboy/ssh-action@v1.0.3
         env:
           LM_STUDIO_URL: ${{ secrets.LM_STUDIO_URL }}
@@ -25,12 +26,18 @@ jobs:
           envs: LM_STUDIO_URL,PORT
           script: |
             set -e
+            set -o pipefail
             
             echo "=========================================="
             echo "Starting deployment to ~/apps/jpg2pdf"
             echo "=========================================="
             
             cd ~/apps/jpg2pdf
+            
+            if [ ! -d .git ]; then
+              echo "❌ Error: Not a git repository"
+              exit 1
+            fi
             
             echo ""
             echo "Creating .env file from GitHub secrets..."
@@ -74,14 +81,28 @@ jobs:
             fi
             
             echo ""
+            echo "Checking disk space..."
+            DISK_USAGE=$(df -h . | awk 'NR==2 {print $5}' | sed 's/%//')
+            echo "Disk usage: ${DISK_USAGE}%"
+            if [ "$DISK_USAGE" -gt 90 ]; then
+              echo "⚠️ Warning: Disk usage is high (${DISK_USAGE}%)"
+            fi
+            
+            echo ""
             echo "Saving current commit hash..."
             OLD_COMMIT=$(git rev-parse HEAD)
-            echo "OLD_COMMIT=$OLD_COMMIT" >> $GITHUB_OUTPUT
-            echo "Current commit: $OLD_COMMIT"
+            echo "DEPLOY_OLD_COMMIT=$OLD_COMMIT"
+            
+            echo ""
+            echo "Checking for uncommitted changes..."
+            if [ -n "$(git status --porcelain)" ]; then
+              echo "⚠️ Warning: Uncommitted changes detected"
+              git status --short
+            fi
             
             echo ""
             echo "Pulling latest code from repository..."
-            OUTPUT=$(git pull)
+            OUTPUT=$(git pull --ff-only)
             echo "$OUTPUT"
             
             if echo "$OUTPUT" | grep -q "Already up to date"; then
@@ -92,12 +113,12 @@ jobs:
             
             echo ""
             NEW_COMMIT=$(git rev-parse HEAD)
-            echo "NEW_COMMIT=$NEW_COMMIT" >> $GITHUB_OUTPUT
-            echo "New commit: $NEW_COMMIT"
+            echo "DEPLOY_NEW_COMMIT=$NEW_COMMIT"
+            echo "Deployed commits: $OLD_COMMIT -> $NEW_COMMIT"
             
             echo ""
             echo "Stopping current containers..."
-            docker compose down
+            docker compose down --remove-orphans
             
             echo ""
             echo "Building and starting new containers..."
@@ -106,7 +127,7 @@ jobs:
             echo ""
             echo "Waiting for container to be healthy..."
             
-            HEALTHCHECK_URL="http://localhost:3000/jpg2pdf/api/health"
+            HEALTHCHECK_URL="http://localhost:${PORT}/jpg2pdf/api/health"
             MAX_ATTEMPTS=30
             ATTEMPT=0
             
@@ -141,23 +162,60 @@ jobs:
             echo "Available backups:"
             docker images | grep "jpg2pdf" || echo "No images found"
             
+            echo ""
+            echo "Logging deployment..."
+            echo "$(date '+%Y-%m-%d %H:%M:%S') - Deployed $NEW_COMMIT" >> deploy.log
+            
+
+      - name: Check Dependencies
+        if: steps.deploy.outcome == 'success'
+        run: |
+          if ! command -v jq &> /dev/null; then
+            echo "Installing jq..."
+            sudo apt-get update -qq && sudo apt-get install -y jq
+          else
+            echo "✓ jq is already installed"
+          fi
 
       - name: Get Deployed Commits
-        if: steps.deploy.outcome == 'success' && steps.deploy.outputs.OLD_COMMIT != ''
+        if: steps.deploy.outcome == 'success'
         id: commits
         run: |
-          OLD_COMMIT="${{ steps.deploy.outputs.OLD_COMMIT }}"
-          NEW_COMMIT="${{ steps.deploy.outputs.NEW_COMMIT }}"
+          DEPLOY_OUTPUT="${{ steps.deploy.outputs.stdout }}"
           
-          if [ -z "$OLD_COMMIT" ] || [ -z "$NEW_COMMIT" ]; then
+          OLD_COMMIT=$(echo "$DEPLOY_OUTPUT" | grep "DEPLOY_OLD_COMMIT=" | sed 's/.*DEPLOY_OLD_COMMIT=//' | tr -d '\r')
+          NEW_COMMIT=$(echo "$DEPLOY_OUTPUT" | grep "DEPLOY_NEW_COMMIT=" | sed 's/.*DEPLOY_NEW_COMMIT=//' | tr -d '\r')
+          
+          echo "Old commit: $OLD_COMMIT"
+          echo "New commit: $NEW_COMMIT"
+          
+          if [ -z "$OLD_COMMIT" ] || [ -z "$NEW_COMMIT" ] || [ "$OLD_COMMIT" = "$NEW_COMMIT" ]; then
             echo "commits_list=" >> $GITHUB_OUTPUT
             exit 0
           fi
           
-          COMMITS=$(curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
-            "https://api.github.com/repos/${{ github.repository }}/compare/${OLD_COMMIT}...${NEW_COMMIT}" | \
-            jq -r '.commits[] | "- `\(.sha[0:7])` **\(.commit.message | split("\n")[0])** _by \(.commit.author.name)_"' | \
+          echo "Fetching commits from GitHub API..."
+          API_RESPONSE=$(curl -s -w "\n%{http_code}" -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+            "https://api.github.com/repos/${{ github.repository }}/compare/${OLD_COMMIT}...${NEW_COMMIT}")
+          
+          HTTP_CODE=$(echo "$API_RESPONSE" | tail -n1)
+          RESPONSE_BODY=$(echo "$API_RESPONSE" | sed '$d')
+          
+          if [ "$HTTP_CODE" != "200" ]; then
+            echo "⚠️ Warning: GitHub API returned status $HTTP_CODE"
+            echo "commits_list=" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+          
+          COMMITS=$(echo "$RESPONSE_BODY" | \
+            jq -r '.commits[]? | "- `\(.sha[0:7])` **\(.commit.message | split("\n")[0])** _by \(.commit.author.name)_"' | \
             tr '\n' '|')
+          
+          if [ -z "$COMMITS" ]; then
+            echo "⚠️ Warning: No commits found in API response"
+          else
+            echo "✓ Found $(echo "$COMMITS" | tr '|' '\n' | wc -l) commits"
+          fi
           
           echo "commits_list=$COMMITS" >> $GITHUB_OUTPUT
 
