@@ -1,3 +1,4 @@
+# JPG2PDF Docker Compose Configuration
 services:
   jpg2pdf:
     build:
