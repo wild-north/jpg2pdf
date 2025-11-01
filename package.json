@@ -9,10 +9,11 @@
     "dev:backend": "nodemon backend/server.js",
     "dev:frontend": "cd frontend && npm run dev",
     "build": "cd frontend && npm run build",
+    "build:prod": "docker compose build --no-cache",
     "start": "concurrently \"npm run start:backend\" \"npm run start:frontend\"",
     "start:backend": "node backend/server.js",
     "start:frontend": "cd frontend && npm run dev",
-    "start:prod": "npm run build && node backend/server.js",
+    "start:prod": "docker compose up -d --remove-orphans",
     "cli": "node backend/pdf-generator.js"
   },
   "keywords": [
