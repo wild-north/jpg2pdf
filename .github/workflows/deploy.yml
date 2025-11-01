@@ -1,4 +1,4 @@
-name: Deploy to Home Server
+name: Deploy to North Lab
 
 on:
   workflow_dispatch:

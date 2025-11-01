@@ -150,5 +150,5 @@ MIT
 
 ---
 
-**Author**: Serhii  
+**Author**: wild-north  
 **Version**: 1.0.0
