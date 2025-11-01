@@ -2,7 +2,7 @@
 
 ![Deploy Status](https://github.com/wild-north/jpg2pdf/actions/workflows/deploy.yml/badge.svg)
 
-Simple and fast Node.js application for converting JPG images to PDF with web interface.
+Simple and fast Node.js application for converting JPG images to PDF with beautiful web interface.
 
 ## 📋 Description
 
