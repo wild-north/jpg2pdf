@@ -7,16 +7,16 @@ services:
         BASE_PATH: /jpg2pdf
     container_name: jpg2pdf
     ports:
-      - "3000:3000"
+      - "${PORT:-3000}:${PORT:-3000}"
     environment:
-      - PORT=3000
+      - PORT=${PORT:-3000}
       - NODE_ENV=production
       - BASE_PATH=/jpg2pdf
-      - LM_STUDIO_URL=http://192.168.88.24:1234
+      - LM_STUDIO_URL=${LM_STUDIO_URL}
     volumes:
       - ./output:/app/output
     healthcheck:
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3000/jpg2pdf/api/health"]
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:${PORT:-3000}/jpg2pdf/api/health"]
       interval: 30s
       timeout: 10s
       retries: 3

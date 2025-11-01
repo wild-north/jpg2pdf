@@ -128,11 +128,16 @@ function App() {
         body: JSON.stringify({ images: imagesToSend })
       })
 
+      const data = await response.json()
+
+      if (response.status === 413 || data.error === 'PAYLOAD_TOO_LARGE') {
+        alert('You\'ve attached files that are too large for AI to process. Please try with smaller images or fewer files.')
+        return
+      }
+
       if (!response.ok) {
         throw new Error('Failed to analyze images')
       }
-
-      const data = await response.json()
 
       if (data.available && data.summary) {
         setAiSummary(data.summary)
@@ -157,13 +162,21 @@ function App() {
           }
         }
       } else {
-        setAiAvailable(false)
-        alert('AI service is currently unavailable. Please try again later.')
+        if (data.error === 'PAYLOAD_TOO_LARGE') {
+          alert('You\'ve attached files that are too large for AI to process. Please try with smaller images or fewer files.')
+        } else {
+          setAiAvailable(false)
+          alert('AI service is currently unavailable. Please try again later.')
+        }
       }
 
     } catch (error) {
       console.error('Error analyzing with AI:', error)
-      alert('Error analyzing images with AI. Please try again.')
+      if (error.message && error.message.includes('too large')) {
+        alert('You\'ve attached files that are too large for AI to process. Please try with smaller images or fewer files.')
+      } else {
+        alert('Error analyzing images with AI. Please try again.')
+      }
     } finally {
       setIsAnalyzing(false)
     }
@@ -199,10 +212,15 @@ function App() {
             const filenameData = await filenameResponse.json()
             if (filenameData.available && filenameData.filename) {
               setAiGeneratedFilename(filenameData.filename)
+            } else if (filenameData.error === 'PAYLOAD_TOO_LARGE') {
+              console.warn('Files too large for AI filename generation')
             }
           }
         } catch (error) {
           console.error('Error generating filename:', error)
+          if (error.message && error.message.includes('too large')) {
+            console.warn('Files too large for AI processing')
+          }
         }
       }
 

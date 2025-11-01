@@ -1,3 +1,4 @@
+import 'dotenv/config';
 import express from 'express';
 import multer from 'multer';
 import cors from 'cors';
@@ -10,15 +11,23 @@ import sharp from 'sharp';
 const app = express();
 const PORT = process.env.PORT || 3001;
 const BASE_PATH = process.env.BASE_PATH || '';
-const LM_STUDIO_URL = process.env.LM_STUDIO_URL || 'http://192.168.88.24:1234';
+const LM_STUDIO_URL = process.env.LM_STUDIO_URL || '';
 
 let aiServiceAvailable = false;
 
 app.use(cors());
-app.use(express.json());
+app.use(express.json({ limit: '50mb' }));
+app.use(express.urlencoded({ limit: '50mb', extended: true }));
 
 async function checkAIServiceHealth() {
   try {
+    if (!LM_STUDIO_URL) {
+      aiServiceAvailable = false;
+      console.log('ℹ️ LM Studio URL not configured. AI features will be disabled.');
+      console.log('   Set LM_STUDIO_URL in .env file to enable AI features.');
+      return false;
+    }
+
     console.log(`🔍 Checking LM Studio availability at ${LM_STUDIO_URL}...`);
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 5000);
@@ -274,7 +283,7 @@ app.post(`${BASE_PATH}/api/ai/analyze`, async (req, res) => {
     const content = [
       {
         type: 'text',
-        text: 'Analyze these document images and create a brief description in Ukrainian (up to 300 characters). Describe what type of document this is, whose it is, and which pages are shown. Be specific and informative. Example: "Цей документ містить скани всіх сторінок паспорта громадянина України Івана Петренка"'
+        text: 'You must respond ONLY with an English description of the document images (maximum 300 characters). DO NOT include any introductory phrases like "Here is", "This is", or explanations. Start directly with the description.\n\nDescribe: document type, owner name, and pages shown.\n\nExample response: "This document contains scans of all pages of the passport of a citizen of Ukraine Ivan Petrenko"\n\nNow analyze the images and respond with ONLY the English description:'
       }
     ];
 
@@ -307,10 +316,16 @@ app.post(`${BASE_PATH}/api/ai/analyze`, async (req, res) => {
   } catch (error) {
     console.error('AI analysis error:', error.message);
     aiServiceAvailable = false;
+    
+    let errorMessage = error.message;
+    if (error.type === 'entity.too.large' || error.message.includes('too large')) {
+      errorMessage = 'PAYLOAD_TOO_LARGE';
+    }
+    
     res.json({
       available: false,
       summary: null,
-      error: error.message
+      error: errorMessage
     });
   }
 });
@@ -412,10 +427,16 @@ Return ONLY the filename, no explanations.`
   } catch (error) {
     console.error('Filename generation error:', error.message);
     aiServiceAvailable = false;
+    
+    let errorMessage = error.message;
+    if (error.type === 'entity.too.large' || error.message.includes('too large')) {
+      errorMessage = 'PAYLOAD_TOO_LARGE';
+    }
+    
     res.json({
       available: false,
       filename: null,
-      error: error.message
+      error: errorMessage
     });
   }
 });
@@ -442,6 +463,17 @@ if (fs.existsSync(indexHtmlPath)) {
   
   console.log('🔧 Development mode: Frontend runs separately');
 }
+
+app.use((err, req, res, next) => {
+  if (err.type === 'entity.too.large') {
+    return res.status(413).json({
+      available: false,
+      error: 'PAYLOAD_TOO_LARGE',
+      message: 'Request payload is too large'
+    });
+  }
+  next(err);
+});
 
 app.listen(PORT, async () => {
   console.log(`🚀 JPG2PDF server running on http://localhost:${PORT}${BASE_PATH}`);

@@ -100,11 +100,12 @@ The application includes optional AI-powered features using LM Studio with multi
 3. **Graceful Fallback**: If AI service is unavailable, all AI features are hidden and the app works normally with standard features
 
 ### Configuration
-Set the LM Studio URL in `docker-compose.yml`:
-```yaml
-environment:
-  - LM_STUDIO_URL=http://192.168.88.24:1234
+Create a `.env` file in the project root:
+```bash
+LM_STUDIO_URL=http://localhost:1234
 ```
+
+Or set via docker-compose environment variables.
 
 ### Technical Details
 - All prompts are in English for optimal token usage
